@@ -33,7 +33,7 @@ sides' intent.
 - `assets/` - PNG/JPG images and MP3 audio. Lowercase-hyphenated names describing the image.
 - `docs/` - the rulebook PDF (written for v1.3.0; it lags behind the game).
 - `tools/build_single_file.py` - produces the one-file distributable; CI runs it, you rarely need to.
-- `server/` - the multiplayer relay (Node + `ws`, Docker Compose with Caddy for HTTPS). It is not part of the published
+- `server/` - the multiplayer relay (Node + `ws`, Docker Compose with Traefik labels for HTTPS). It is not part of the published
   site; the no-npm rule above is for the game, not this folder. Multiplayer logic in the game is the MULTIPLAYER section of `game.js`.
 
 ## Rules

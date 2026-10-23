@@ -11,8 +11,8 @@ special orders. It runs entirely in the browser: no install, server or internet 
 
 ## Multiplayer (Main Menu > Multiplayer)
 An Annihilation battle between two players over the internet, through a relay server (see `server/`).
-- Both players enter the relay's address (`wss://...`). One clicks **Host Game** and sends the other the 4-letter code;
-  the other types it in and clicks **Join**.
+- The relay address is filled in for you (`wss://battle-fleet-relay.dwyer.dev`). One player clicks **Host Game** and
+  sends the other the 4-letter code; the other types it in and clicks **Join**.
 - The host picks the ships, and both fleets get the same ones. Each player then fits out, arranges and chooses a
   heading for their own fleet. Choosing the same heading gives a contested crossing, as in Skirmish.
 - Each phase, both players give their orders at the same time without seeing the other's. When both have ended the

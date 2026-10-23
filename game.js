@@ -6211,7 +6211,7 @@ function wireUpPanel(s){
 //    so both copies roll the same numbers and show the same hits, misses and critical damage.
 // Annihilation only, for now.
 const MP_PROTOCOL = 1;          // bump whenever these messages change, so two different builds refuse to play each other
-const MP_DEFAULT_SERVER = '';   // a relay address to prefill on the Multiplayer screen, e.g. 'wss://battlefleet.example.org'
+const MP_DEFAULT_SERVER = 'wss://battle-fleet-relay.dwyer.dev';   // prefilled on the Multiplayer screen (a player can type another)
 const MP_SERVER_KEY = 'bf.mpServer';
 
 // A number in [0,1) that depends only on the text (cyrb53).

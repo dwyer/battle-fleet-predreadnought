@@ -4,30 +4,31 @@ A small server that links two players' games for Multiplayer. It doesn't know th
 4-letter room code and passes their orders back and forth, while the two copies of the game keep the battle in step
 themselves. The game itself stays on GitHub Pages. Only this relay runs on your own machine.
 
+The game connects to `wss://battle-fleet-relay.dwyer.dev` by default (`MP_DEFAULT_SERVER` in the MULTIPLAYER section
+of `game.js`). Players can type a different address on the Multiplayer screen.
+
 ## What you need
 
-- A machine that's always on, with Docker and Docker Compose.
-- A **domain name** that points at your home's internet address. A free one from [DuckDNS](https://www.duckdns.org)
-  is fine (e.g. `battlefleet.duckdns.org`). Run their updater if your home IP address changes.
-- Your router **forwarding ports 80 and 443** to that machine.
+- Docker and Docker Compose on an always-on machine.
+- A running **Traefik** on that machine with:
+  - a Docker network the relay can join (default name `traefik`),
+  - an HTTPS entrypoint (default name `websecure`),
+  - a certificate resolver named **`le`**.
+- `battle-fleet-relay.dwyer.dev` pointing at that machine.
 
 The game is served from a secure (https) page, and browsers only let secure pages connect to secure servers. So the
-relay needs a certificate. The bundled [Caddy](https://caddyserver.com) gets one from Let's Encrypt and renews it
-automatically. That's what the domain and port 80 are for.
+relay is reached through Traefik's HTTPS. Traefik passes WebSocket connections through with no extra settings.
 
 ## Start it
 
 ```sh
 cd server
-cp .env.example .env     # then edit .env: set DOMAIN to your domain name
 docker compose up -d
 ```
 
-Check it: `https://<your domain>/health` should show `{"ok":true,...}` in a browser.
+If your Traefik network or entrypoint has a different name, first `cp .env.example .env` and change them there.
 
-In the game: **Multiplayer**, then put `wss://<your domain>` in **Server address**. The game remembers it. (It can
-also be built into the game so nobody has to type it: set `MP_DEFAULT_SERVER` near the top of the MULTIPLAYER section
-of `game.js`.)
+Check it: `https://battle-fleet-relay.dwyer.dev/health` should show `{"ok":true,...}` in a browser.
 
 ## Day to day
 
@@ -35,15 +36,16 @@ of `game.js`.)
 - Update after pulling a new version of this repo: `docker compose up -d --build`
 - Stop: `docker compose down`
 
-The containers restart on their own after a reboot.
+The container restarts on its own after a reboot.
 
-## Settings (`.env`)
+## Settings (`.env`, all optional)
 
-| Setting | What it does |
-|---|---|
-| `DOMAIN` | Your domain name, used for the HTTPS certificate. |
-| `ALLOWED_ORIGINS` | Which web pages may connect, comma-separated. `https://dwyer.github.io` covers the main site and every PR preview; `null` is the game opened straight from a file. Leave it empty to allow any page. |
-| `RELAY_PORT` | Only if you already run your own reverse proxy instead of Caddy: start just the relay with `docker compose up -d relay` and proxy your HTTPS domain (WebSocket upgrade enabled) to `127.0.0.1:8080`, or whatever port you set here. |
+| Setting | Default | What it does |
+|---|---|---|
+| `DOMAIN` | `battle-fleet-relay.dwyer.dev` | The host name Traefik routes to the relay. |
+| `TRAEFIK_NETWORK` | `traefik` | The external Docker network Traefik is on. |
+| `TRAEFIK_ENTRYPOINT` | `websecure` | Traefik's HTTPS entrypoint. |
+| `ALLOWED_ORIGINS` | `https://dwyer.github.io,null` | Which web pages may connect, comma-separated. `https://dwyer.github.io` covers the main site and every PR preview; `null` is the game opened straight from a file. Set it empty to allow any page. |
 
 ## Running it without Docker
 
