@@ -1,0 +1,49 @@
+# Publishes the game to GitHub Pages (gh-pages branch).
+#   push to main  -> site root, plus the single-file build at /battle-fleet-predreadnought.html
+#   pull request  -> playable preview at /pr-preview/pr-<number>/, removed when the PR closes
+name: Pages
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: gh-pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble site
+        if: github.event.action != 'closed'
+        run: |
+          node --check game.js
+          mkdir _site
+          cp -r index.html style.css game.js assets docs _site/
+          python3 tools/build_single_file.py _site/battle-fleet-predreadnought.html
+          touch _site/.nojekyll
+
+      - name: Deploy main site
+        if: github.event_name == 'push'
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          folder: _site
+          branch: gh-pages
+          clean-exclude: pr-preview/
+
+      - name: Deploy PR preview
+        if: github.event_name == 'pull_request'
+        uses: rossjrw/pr-preview-action@v1
+        with:
+          source-dir: _site
+          preview-branch: gh-pages
+          umbrella-dir: pr-preview
