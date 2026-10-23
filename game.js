@@ -415,8 +415,28 @@ let state = {
 };
 const ZOOM_MIN = 0.5, ZOOM_MAX = 8;
 
+// Multiplayer session (see MULTIPLAYER near the end). In a multiplayer battle each copy of the game keeps its OWN fleet
+// in state.fleets.player and the opponent's in state.fleets.ai, so everything on screen works as it does against the AI.
+const mp = {
+  on: false,          // true from the moment a room is hosted or joined until the player leaves it
+  role: null,         // 'host' | 'guest'
+  ws: null,
+  code: null,
+  peer: false,        // the other player is connected
+  started: false,     // the battle itself has begun
+  seed: null,         // shared by both copies: every dice roll is drawn from it (see gameRandom)
+  rollCount: {},
+  inbox: {},          // orders from the opponent that arrived before we needed them, by kind|round
+  waitFor: null,      // {key, cb} while we wait on the opponent
+  myFleetMsg: null, theirFleetMsg: null,
+  roundSum: {},       // round -> checksum of the battle at the start of that round
+  desyncWarned: false
+};
+function mpActive(){ return mp.on && mp.started; }
+
 let shipCounter = 0;
-function nextId(){ return 'S'+(shipCounter++); }
+// In multiplayer the host's ships are H0, H1... and the guest's G0, G1..., so both copies use the same names for every ship.
+function nextId(){ return (mp.on ? (mp.role==='host' ? 'H' : 'G') : 'S')+(shipCounter++); }
 
 /* ============================== FLEET SETUP UI ============================== */
 const fleetChoice = { player:{Frigate:0, Destroyer:0, 'Light Cruiser':0, 'Medium Cruiser':0, 'Heavy Cruiser':0, Battleship:0}, ai:{Frigate:0, Destroyer:0, 'Light Cruiser':0, 'Medium Cruiser':0, 'Heavy Cruiser':0, Battleship:0} };
@@ -459,15 +479,20 @@ document.getElementById('toFitmentBtn').onclick = ()=>{
   const sameFleet = state.fleets.player.length>0 && SHIP_ORDER.every(t=> state.fleets.player.filter(sh=>sh.type===t).length === fleetChoice.player[t]);
   if(!sameFleet){
     state.fleets.player = createFleetShips(fleetChoice.player, 'player');
-    state.fleets.ai = createFleetShips(fleetChoice.ai, 'ai');
+    state.fleets.ai = mp.on ? [] : createFleetShips(fleetChoice.ai, 'ai');   // a human opponent brings their own fleet
   }
-  assignAiNames();
+  if(mp.on) mpSend({k:'fleetSize', counts: Object.assign({}, fleetChoice.player)});
+  else assignAiNames();
+  openFitmentScreen();
+};
+function openFitmentScreen(){
   document.getElementById('titleScreen').style.display='none';
   document.getElementById('fitmentScreen').style.display='flex';
+  document.getElementById('backToFleetBtn').style.display = mp.on ? 'none' : '';  // in multiplayer the fleet size is already agreed
   fitSelectedShipId = state.fleets.player[0] ? state.fleets.player[0].id : null;
   fitSelection = null;
   renderFitmentScreen();
-};
+}
 
 document.getElementById('toFormationBtn').onclick = ()=>{
   const unfitted = state.fleets.player.map(s=>({s, n:emptySlotCount(s)})).filter(x=>x.n>0);
@@ -616,13 +641,14 @@ document.querySelectorAll('#headingModal button[data-h]').forEach(b=>{
   b.onclick = ()=>{
     state.headingPlayer = b.dataset.h;
     const opts=['North','South','East','West'];
-    state.headingAI = opts[Math.floor(Math.random()*4)];
+    if(!mp.on) state.headingAI = opts[Math.floor(Math.random()*4)];
     document.getElementById('headingModal').classList.remove('show');
     battleMusic.currentTime = 0;
     // Called directly from this click, so most browsers allow it — but if THIS browser's
     // autoplay policy still blocks it for some reason, the toggle button (now visible once the
     // battle starts) lets the player start it with one more direct click of their own.
     battleMusic.play().catch(()=>{});
+    if(mp.on){ mpSubmitFleet(); return; }   // the battle starts once the opponent's fleet is ready too
     startGame();
   };
 });
@@ -630,7 +656,7 @@ document.querySelectorAll('#headingModal button[data-h]').forEach(b=>{
 document.getElementById('helpBtn').onclick = ()=> document.getElementById('helpModal').classList.add('show');
 document.getElementById('closeHelp').onclick = ()=> document.getElementById('helpModal').classList.remove('show');
 document.getElementById('surrenderBtn').onclick = ()=>{
-  if(confirm('Surrender the battle?')){ endGame('ai', 'surrender'); }
+  if(confirm('Surrender the battle?')){ if(mpActive()) mpSend({k:'surrender'}); endGame('ai', 'surrender'); }
 };
 
 /* ============================== GAME START ============================== */
@@ -882,7 +908,8 @@ function placeFleets(){
   if(contested){
     // Both fleets are travelling the SAME direction: a stern chase, not a head-on approach.
     const loserSide = Math.random()<0.5 ? 'player' : 'ai';
-    logMsg('sys', `Both fleets approached on the same heading — a contested crossing! ${loserSide==='player'?'You are':'The enemy is'} caught out ahead, with the pursuer bearing down from behind.`);
+    state.contestedLoser = loserSide;
+    logContestedCrossing(loserSide);
     playerHeading = pDeg; aiHeading = pDeg;
     playerFrac = loserSide==='player' ? 0.667 : 0.02;
     aiFrac = loserSide==='ai' ? 0.667 : 0.02;
@@ -911,19 +938,32 @@ function placeFleets(){
     }
     s.heading = playerHeading;
   });
+  // A human opponent's fleet keeps the formation they drew, turned to face their own heading.
+  const aRad = aiHeading*DEG2RAD;
+  const afx = Math.sin(aRad), afy = -Math.cos(aRad), apx = Math.cos(aRad), apy = Math.sin(aRad);
   state.fleets.ai.forEach((s,i)=>{
     const off = (i-(state.fleets.ai.length-1)/2)*spacing;
     let pos = edgePos(aiHeading, aiFrac);
-    s.x = pos.x + px*off; s.y = pos.y + py*off;
+    if(s.formationOffset){
+      s.x = pos.x + apx*s.formationOffset.right + afx*s.formationOffset.forward;
+      s.y = pos.y + apy*s.formationOffset.right + afy*s.formationOffset.forward;
+    } else {
+      s.x = pos.x + px*off; s.y = pos.y + py*off;
+    }
     s.heading = aiHeading;
   });
   // Turrets start trained dead ahead, whatever the starting heading (they used to default to north).
   [...state.fleets.player, ...state.fleets.ai].forEach(s=>{ s.turretFacing = s.heading; s.turretSyncHeading = s.heading; });
 }
 
+function logContestedCrossing(loserSide){
+  logMsg('sys', `Both fleets approached on the same heading — a contested crossing! ${loserSide==='player'?'You are':'The enemy is'} caught out ahead, with the pursuer bearing down from behind.`);
+}
+
 // Main menu: Skirmish is the current game (one battle against the AI); the other modes are placeholders for now.
 function showMainMenu(){
   document.getElementById('mainMenuScreen').style.display='flex';
+  document.getElementById('multiplayerScreen').style.display='none';
   document.getElementById('skirmishTypeScreen').style.display='none';
   document.getElementById('btBriefModal').classList.remove('show');
   document.getElementById('titleScreen').style.display='none';
@@ -979,20 +1019,35 @@ document.getElementById('btVipPlus').onclick = ()=>{
   const total = SHIP_ORDER.reduce((n,t)=>n+fleetChoice.player[t],0);
   btOpt.vipCount = Math.min(Math.max(1,total), btOpt.vipCount+1); btSyncSetupBox();
 };
-document.getElementById('backToMenuBtn').onclick = showMainMenu;
+document.getElementById('backToMenuBtn').onclick = ()=>{
+  if(mp.on){
+    if(!confirm('Leave this multiplayer game?')) return;
+    mpLeave();
+  }
+  showMainMenu();
+};
 
-function startGame(){
+// preset: a multiplayer guest's battle exactly as the host set it up (sun, islands, every ship's starting spot).
+function startGame(preset){
   document.getElementById('mainMenuScreen').style.display='none';
   document.getElementById('titleScreen').style.display='none';
   document.getElementById('app').style.display='flex';
-  state.sunDeg = Math.floor(Math.random()*360);
+  state.contestedLoser = null;
+  if(preset){
+    state.sunDeg = preset.sunDeg;
+    state.islands = preset.islands;
+    mpApplyPlacement(preset.place);
+    if(preset.contested) logContestedCrossing(preset.contested==='host' ? 'ai' : 'player');
+  } else {
+    state.sunDeg = Math.floor(Math.random()*360);
+    if(!mp.on) assignAiNames();   // the player may have named a ship after one of the AI's
+    placeFleets();
+    allShips().forEach(s=>{ s.turretSyncHeading = s.heading; });
+    state.islands = generateIslands();
+  }
   document.getElementById('sunBearing').textContent = state.sunDeg;
-  assignAiNames();   // the player may have named a ship after one of the AI's
-  placeFleets();
-  allShips().forEach(s=>{ s.turretSyncHeading = s.heading; });
-  state.islands = generateIslands();
   resizeCanvas();
-  logMsg('sys','The fleets sight one another. Battle is joined.');
+  logMsg('sys', mp.on ? 'The fleets sight one another. Battle is joined against your opponent.' : 'The fleets sight one another. Battle is joined.');
   beginRound();
   startAnimLoop();
 }
@@ -1271,7 +1326,10 @@ function clampViewCenter(){
   state.viewCenter.y = Math.max(-pad, Math.min(BOARD_H+pad, state.viewCenter.y));
 }
 
-function allShips(){ return [...state.fleets.player, ...state.fleets.ai].filter(s=>!s.destroyed); }
+// In multiplayer both copies list the ships in the same order (the host's fleet first), so anything worked out ship by
+// ship (collisions, mines, torpedoes) comes out the same on both screens.
+function canonSides(){ return mpActive() && mp.role==='guest' ? ['ai','player'] : ['player','ai']; }
+function allShips(){ return canonSides().flatMap(k=>state.fleets[k]).filter(s=>!s.destroyed); }
 function shipById(id){ return allShips().find(s=>s.id===id) || [...state.fleets.player,...state.fleets.ai].find(s=>s.id===id); }
 
 function render(){
@@ -2449,7 +2507,9 @@ function minSpeedFor(s){
 }
 
 /* ============================== CRITICAL DAMAGE ============================== */
-function rollDie(sides){ return 1 + Math.floor(Math.random()*sides); }
+// tag names the roll (what for, which round, which ship) so both copies of a multiplayer battle get the same result
+// for it, whatever order they happen to roll in. Against the AI it is just Math.random().
+function rollDie(sides, tag){ return 1 + Math.floor(gameRandom(tag)*sides); }
 // Percentage of the ship's total armor (all four facings together) that is still intact.
 function shipArmorPct(s){
   const max = SHIP_TYPES[s.type].armor; let cur = 0, tot = 0;
@@ -2519,14 +2579,14 @@ function resolveCriticalDamage(){
     byShip.get(id).forEach(e=>{
       const needs = critNeedsForArmorPct(e.pct);
       const need = needs>1 ? needs+'+' : 'any roll';
-      const d20 = rollDie(20);
+      const d20 = rollDie(20, `c20|${state.round}|${s.id}`);
       const pct = Math.round(e.pct);
       if(d20 < needs){
         lines.push({pct, needs, d20, crit:false, d6:null});
         logMsg('sys', `  ${shipLabel(s)}: structure hit, armor ${pct}% — D20 ${d20} (needs ${need}): no critical damage.`);
         return;
       }
-      const d6 = rollDie(6); d6s.push(d6);
+      const d6 = rollDie(6, `c6|${state.round}|${s.id}`); d6s.push(d6);
       lines.push({pct, needs, d20, crit:true, d6});
       logMsg('dmg', `  ${shipLabel(s)}: structure hit, armor ${pct}% — D20 ${d20} (needs ${need}): CRITICAL DAMAGE HIT! D6 = ${d6}.`);
     });
@@ -2542,7 +2602,7 @@ function resolveCriticalDamage(){
       logMsg('dmg', `  ${shipLabel(s)} is DEAD IN THE WATER: no movement or turning orders in its next Movement phase.`);
       showCritPopup(s, {kind:'dead', lines});
     } else {
-      const d2 = rollDie(2);
+      const d2 = rollDie(2, `c2|${state.round}|${s.id}`);
       applyCritical(s, 'steering', d2===1 ? -1 : +1);
       logMsg('dmg', s.crit.kind==='dead'
         ? `  ${shipLabel(s)}'s steering is jammed too, but it stays dead in the water.`
@@ -2558,7 +2618,7 @@ function resolveCriticalDamage(){
 function advanceCriticalState(s){
   if(!s.crit || s.destroyed) return;
   if(s.crit.fresh){ s.crit.fresh = false; return; }
-  const d2 = rollDie(2);
+  const d2 = rollDie(2, `rep|${state.round}|${s.id}`);
   if(d2===2){
     logMsg('sys', `${shipLabel(s)}'s crew gets the ${s.crit.kind==='dead'?'engines':'steering'} working again (repair roll D2 = 2). Back to normal.`);
     s.crit = null;
@@ -3751,7 +3811,9 @@ function beginRound(){
   allShips().forEach(s=>{ s.turretSyncHeading = s.heading; }); // every turret starts the phase settled against its hull
   // shield regen at start of movement phase, per side, for each side's own ships when it becomes their movement
   regenShields('player');
-  state.fleets.player.forEach(s=>{
+  // In multiplayer the opponent's ships get the same start-of-round upkeep here (against the AI it happens in advanceToAiMovement).
+  if(mpActive()) regenShields('ai');
+  (mpActive() ? [...state.fleets.player, ...state.fleets.ai] : state.fleets.player).forEach(s=>{
     s.movementPlan=null; s.firedThisRound={broadside:false,turret:false,torpedo:false}; resetWeaponShots(s);
     s.moveDragPreview=null; // safety net: never let a stray drag-preview outlive its round
     advanceGroundedState(s);
@@ -3761,10 +3823,12 @@ function beginRound(){
   });
   state.selectedShipIds.clear(); state.selectedShipId=null; state.moveDraft=null;
   state.roundMovePaths = [];
+  if(mpActive()) mpNoteRoundStart();
   // A ship that is dead in the water can't be given movement orders: it coasts on its own at minimum speed.
   const coasters = state.fleets.player.filter(s=>!s.destroyed && !s.movementPlan && !s.grounded && (s.activeOrder==='reverse' || (s.crit && s.crit.kind==='dead')));
   coasters.forEach(s=>{ logMsg('sys', s.activeOrder==='reverse' ? `${shipLabel(s)} goes Full Reverse Stop and only coasts ahead.` : `${shipLabel(s)} is dead in the water and coasts ahead.`); confirmShipMovement(s, defaultMoveDraft(s)); });
-  if(coasters.length){
+  // (In multiplayer, mines and the win check wait until both fleets have moved: see mpResolveMovement.)
+  if(coasters.length && !mpActive()){
     checkMineDetonations();
     const winner = checkWin();
     if(winner){ endGame(winner, winner==='player'?'victory':'defeat'); return; }
@@ -3804,6 +3868,8 @@ function updatePhaseBanner(){
   if(state.gameOver){
     titleEl.textContent = state.gameOverReason==='surrender'
       ? (state.gameOverWinner==='player' ? 'ENEMY SURRENDERED' : 'SURRENDERED')
+      : state.gameOverReason==='left' ? 'OPPONENT LEFT'
+      : state.gameOverReason==='lost' ? 'CONNECTION LOST'
       : (state.gameOverWinner==='player' ? 'VICTORY' : 'DEFEAT');
     subEl.textContent = 'See the summary';
     advBtn.style.display='none';
@@ -3814,6 +3880,7 @@ function updatePhaseBanner(){
   titleEl.textContent = phaseNames[state.phase] || state.phase.toUpperCase();
   const sideLabel = state.activeSide==='player' ? 'Your Fleet' : 'Enemy Fleet';
   let sub = `Round ${state.round} — ${sideLabel}`;
+  if(mpActive() && mp.waitFor) sub = `Round ${state.round} — waiting for your opponent's orders…`;
   if(state.activeSide==='player' && !state.selectedShipId){
     sub += state.phase==='special' ? ' · pick a ship from the fleet list for special orders' : ' · pick a ship from the fleet list for orders';
   }
@@ -3891,6 +3958,7 @@ function confirmMovement(){
   state.selectedShipIds.delete(s.id);
   setActiveFromSelection();
   state.moveDraft = state.selectedShipId ? defaultMoveDraft(shipById(state.selectedShipId)) : null;
+  if(mpActive()){ render(); renderPanel(); return; } // mines and the win check wait for both fleets' moves
   checkMineDetonations();
   render(); renderPanel();
   const winner = checkWin();
@@ -3913,6 +3981,7 @@ function confirmRefloat(){
   setActiveFromSelection();
   state.moveDraft = state.selectedShipId ? {speed:minSpeedFor(shipById(state.selectedShipId)), turns:[], minePlacedAtCum:null} : null;
   render(); renderPanel();
+  if(mpActive()) return;
   const winner = checkWin();
   if(winner){ endGame(winner, winner==='player'?'victory':'defeat'); return; }
 }
@@ -4114,6 +4183,7 @@ function applyCollision(a, b, tau, byShip, poseAt){
 }
 
 function advanceToAiMovement(){
+  if(mpActive()){ mpEndMovement(); return; }
   state.activeSide='ai';
   updatePhaseBanner();
   regenShields('ai');
@@ -4202,8 +4272,7 @@ function skipFiringPhase(){
     s.firingConfirmed = true;
   });
   state.selectedShipIds.clear(); state.selectedShipId = null;
-  commenceFiring();
-  afterWindowsClear(()=>endFiringPhase());
+  commenceFiring(()=>afterWindowsClear(()=>endFiringPhase()));
 }
 // The max number of times a given weapon group's fire button can still be queued this turn —
 // same "any weapon in the group still has ammo" rule the old instant-fire buttons used.
@@ -4265,22 +4334,29 @@ function commenceFiringClicked(){
 // Resolves every queued shot — the player's confirmed targeting AND the AI's own choices —
 // together in one pass, before either side's sinkings are marked. Order doesn't advantage
 // either side here since destruction isn't applied until endFiringPhase() runs afterward.
-function commenceFiring(){
+function commenceFiring(then){
   if(state.firingCommenced) return;
-  state.firingCommenced = true;
   // An All Ahead Full ship that never plotted its extra move holds course at minimum speed.
   state.fleets.player.filter(s=>!s.destroyed && s.activeOrder==='full' && !s.extraPlan).forEach(s=>{ s.extraPlan = defaultMoveDraft(s); });
   state.moveDraft = null;
+  if(mpActive()){ mpCommenceFiring(then); return; } // both fleets' targeting is needed before anyone fires
+  state.firingCommenced = true;
   pendingGunShots = []; // resolveAttack() fills this as shots below actually resolve
   pendingEffects = []; // ...and this, held back until the firing-window batch (if any) closes
-  state.fleets.player.filter(s=>!s.destroyed).forEach(s=>{
-    const q = s.queuedFire;
-    if(!q) return;
-    q.broadsidePort.forEach(targetId=>{ const t=shipById(targetId); if(t) fireBroadside(s,'port',t); });
-    q.broadsideStarboard.forEach(targetId=>{ const t=shipById(targetId); if(t) fireBroadside(s,'starboard',t); });
-    q.turret.forEach(targetId=>{ const t=shipById(targetId); if(t) fireTurrets(s,t); });
-  });
+  state.fleets.player.filter(s=>!s.destroyed).forEach(fireQueuedShots);
   aiDoFiring();
+  finishCommenceFiring();
+  if(then) then();
+}
+// Fires every volley a ship has queued this Firing phase.
+function fireQueuedShots(s){
+  const q = s.queuedFire;
+  if(!q) return;
+  q.broadsidePort.forEach(targetId=>{ const t=shipById(targetId); if(t) fireBroadside(s,'port',t); });
+  q.broadsideStarboard.forEach(targetId=>{ const t=shipById(targetId); if(t) fireBroadside(s,'starboard',t); });
+  q.turret.forEach(targetId=>{ const t=shipById(targetId); if(t) fireTurrets(s,t); });
+}
+function finishCommenceFiring(){
   flushFiringWindowBatch();
   if(!firingWindows.length) releasePendingEffects(); // nothing to wait for — show impacts now
   state.selectedShipIds.clear(); state.selectedShipId=null;
@@ -4393,7 +4469,7 @@ function executeExtraMoves(cb){
   if(!movers.length){ cb(); return; }
   state.roundMovePaths = [];
   movers.forEach(s=>{
-    let plan = s.extraPlan || (s.side==='ai' ? aiPlanExtraMove(s) : defaultMoveDraft(s));
+    let plan = s.extraPlan || (s.side==='ai' && !mpActive() ? aiPlanExtraMove(s) : defaultMoveDraft(s));
     s.extraPlan = null;   // the move is being made now: drop the plotted dashed path and silhouette, as in a normal Movement sweep
     plan = { speed: Math.max(minSpeedFor(s), Math.min(s.movement, plan.speed)), turns: plan.turns||[], minePlacedAtCum:null };
     const path = computePath(s, plan);
@@ -4408,7 +4484,7 @@ function executeExtraMoves(cb){
   resolveMovementCollisions();
   // Turrets settle for the new positions: a ship with a target swings toward it, any other turret turns with its hull.
   movers.filter(s=>!s.destroyed).forEach(s=>{
-    if(s.side==='ai'){
+    if(s.side==='ai' && !mpActive()){
       const foes = state.fleets.player.filter(e=>!e.destroyed);
       if(foes.length && s.turretWeapons.some(Boolean)){
         const t = foes.reduce((a,b)=> dist(s.x,s.y,a.x,a.y)<dist(s.x,s.y,b.x,b.y)?a:b);
@@ -4425,7 +4501,7 @@ function executeExtraMoves(cb){
   checkMineDetonations();
   render();
   playMovementAnimation(()=>{
-    state.fleets.player.forEach(s=>{ s.extraPlan = null; });
+    allShips().forEach(s=>{ s.extraPlan = null; });
     releasePendingEffects();
     purgeDestroyed();
     cb();
@@ -4482,10 +4558,13 @@ function checkWin(){
 }
 function endGame(winner, reason){
   state.gameOver=true;
+  mp.waitFor = null;
   state.gameOverWinner = winner;
   state.gameOverReason = reason || (winner==='player' ? 'victory' : 'defeat');
   reason = state.gameOverReason;
-  const msg = reason==='surrender' ? 'You have surrendered the battle.'
+  const msg = reason==='surrender' ? (winner==='player' ? 'Your opponent has surrendered the battle.' : 'You have surrendered the battle.')
+    : reason==='left' ? 'Your opponent has left the battle.'
+    : reason==='lost' ? 'The battle ends without a result.'
     : (((btActive()||kothActive()) && state.btEndNote) ? state.btEndNote : (winner==='player' ? 'VICTORY! The enemy fleet is annihilated.' : 'DEFEAT. Your fleet has been destroyed.'));
   logMsg('sys', msg);
   updatePhaseBanner();
@@ -4549,9 +4628,11 @@ function shipHealthHTML(s){
 function showSummary(winner, reason){
   const title = reason==='surrender'
     ? (winner==='player' ? 'Enemy Surrendered — Victory!' : 'You Surrendered')
+    : reason==='left' ? 'Your Opponent Left the Battle'
+    : reason==='lost' ? 'Connection Lost'
     : (winner==='player' ? 'Victory!' : 'Defeat');
-  const titleColor = winner==='player' ? 'var(--good)' : 'var(--bad)';
-  const winningFleet = winner==='player' ? state.fleets.player : state.fleets.ai;
+  const titleColor = winner==='player' ? 'var(--good)' : winner ? 'var(--bad)' : 'var(--gold)';
+  const winningFleet = winner==='player' ? state.fleets.player : winner ? state.fleets.ai : [];
   const survivors = winningFleet.filter(s=>!s.destroyed || s.extracted);
   const survivorSection = survivors.length ? `
     <h3 style="color:var(--good);">Surviving Fleet — Final Condition</h3>
@@ -4582,6 +4663,7 @@ function showSummary(winner, reason){
 }
 
 function resetToMainMenu(){
+  mpLeave();
   battleMusic.pause(); battleMusic.currentTime = 0;
   document.getElementById('summaryModal').classList.remove('show');
   document.getElementById('app').style.display='none';
@@ -4668,7 +4750,7 @@ function resolveAttack(weapon, target, bearingAttackerToTarget, dist_, weaponNam
     pendingEffects.push({type:'misswindow', target});
     return false;
   }
-  const roll = 1+Math.floor(Math.random()*20);
+  const roll = rollDie(20, `atk|${state.round}|${state.phase}|${shooter?shooter.id:'-'}|${target.id}`);
   const rMod = weapon.range ? rangeModifier(dist_, weapon.range) : 0;
   const sMod = sunModifier(bearingAttackerToTarget);
   const gMod = target.grounded ? 5 : 0; // aground and exposed — much easier to hit
@@ -4868,7 +4950,7 @@ function resolveTorpedoes(){
     let hitShipId = null;
     if(hit){
       const chance = torpedoHitChance(hit.d, tp.range);
-      const roll = Math.random();
+      const roll = gameRandom(`torp|${state.round}|${tp.ownerId}`);
       const pct = Math.round(chance*100);
       if(roll < chance){
         hitShipId = hit.ship.id;
@@ -5039,6 +5121,7 @@ function endSpecialOrdersPhase(){
     if(nC) parts.push(`${nC} ship${nC>1?'s have':' has'} a course adjustment not confirmed`);
     if(!confirm(`${parts.join('; ')} — they won't take effect. End the phase anyway?`)) return;
   }
+  if(mpActive()){ mpEndSpecial(); return; }
   state.activeSide='ai';
   state.selectedShipIds.clear(); state.selectedShipId=null;
   updatePhaseBanner();
@@ -5046,20 +5129,24 @@ function endSpecialOrdersPhase(){
   // Weapon shot counts and torpedo reload state are refreshed at the start of each side's next
   // turn (see beginRound / advanceToAiMovement) rather than here.
   setTimeout(()=>{
-    state.fleets.player.filter(s=>!s.destroyed && s.torpConfirmed && (s.torpSelected||[]).length).forEach(s=>{
-      launchTorpedoes(s, s.torpSelected);
-    });
-    state.fleets.player.filter(s=>!s.destroyed && s.mineOrderConfirmed).forEach(s=>{
-      layMine(s);
-    });
-    // Confirmed All Ahead Full / Full Reverse Stop orders take effect when the next round begins.
-    state.fleets.player.filter(s=>!s.destroyed && s.flagOrderConfirmed && (s.specialOrderMode==='full'||s.specialOrderMode==='reverse')).forEach(s=>{ s.nextOrder = s.specialOrderMode; });
-    state.fleets.player.forEach(s=>{ s.torpSelected=[]; s.torpConfirmed=false; s.mineOrderConfirmed=false; s.specialOrderMode=null; s.courseAdjustHeading=null; s.courseConfirmed=false; s.flagOrderConfirmed=false; });
+    carryOutSpecialOrders(state.fleets.player);
     aiDoSpecialAttack(); // adds the AI's launches/mines and flushes every window together with ours
     render();
     // Let the launch/mine windows finish before the round moves on.
     afterWindowsClear(()=>{ state.round++; beginRound(); });
   }, 300);
+}
+// The confirmed Special Orders of one fleet: torpedo launches, then mines, then next round's movement orders.
+function carryOutSpecialOrders(fleet){
+  fleet.filter(s=>!s.destroyed && s.torpConfirmed && (s.torpSelected||[]).length).forEach(s=>{
+    launchTorpedoes(s, s.torpSelected);
+  });
+  fleet.filter(s=>!s.destroyed && s.mineOrderConfirmed).forEach(s=>{
+    layMine(s);
+  });
+  // Confirmed All Ahead Full / Full Reverse Stop orders take effect when the next round begins.
+  fleet.filter(s=>!s.destroyed && s.flagOrderConfirmed && (s.specialOrderMode==='full'||s.specialOrderMode==='reverse')).forEach(s=>{ s.nextOrder = s.specialOrderMode; });
+  fleet.forEach(s=>{ s.torpSelected=[]; s.torpConfirmed=false; s.mineOrderConfirmed=false; s.specialOrderMode=null; s.courseAdjustHeading=null; s.courseConfirmed=false; s.flagOrderConfirmed=false; });
 }
 // Calls cb once no firing/impact windows are showing or queued (with a cap so a background tab,
 // where animation frames pause, can never stall the game).
@@ -5336,7 +5423,7 @@ function aiDoMovement(){
 // keeps its angle to the bow and turns with the ship whenever the ship turns (a course made in Movement, a
 // Course Adjustment, or a re-float). Once a target is confirmed the turret is aimed in its own right: it stays
 // fixed in the world as the hull turns, and swings toward the target. (Enemy ships always have a target.)
-function turretFollowsHull(s){ return s.side==='player' && !s.targetConfirmed; }
+function turretFollowsHull(s){ return (s.side==='player' || mpActive()) && !s.targetConfirmed; } // a human opponent's ships follow the same rule
 function turretSyncOf(s){ return s.turretSyncHeading==null ? s.heading : s.turretSyncHeading; }
 // Brings s.turretFacing up to date with the hull's current heading, then remembers that heading as the new baseline.
 function settleTurretWithHull(s){
@@ -5356,6 +5443,11 @@ function rotateTurretToward(s, target){
   return delta;
 }
 function resolveTurretAiming(){
+  if(mpActive()){
+    // Two human fleets: every ship follows the player rule below, in the same order on both screens.
+    allShips().filter(s=>!deadWater(s)).forEach(aimConfirmedTurret);
+    return;
+  }
   // The AI picks the nearest enemy (judged from where everyone has ended up) and swings onto it.
   const players = state.fleets.player.filter(e=>!e.destroyed);
   state.fleets.ai.filter(s=>!s.destroyed && !deadWater(s)).forEach(s=>{
@@ -5369,16 +5461,17 @@ function resolveTurretAiming(){
     if(s.turretWeapons.some(Boolean)) rotateTurretToward(s, target);
   });
   // Player ships swing onto whatever target they've confirmed; the rest simply turn with their hulls.
-  state.fleets.player.filter(s=>!s.destroyed && !deadWater(s)).forEach(s=>{
-    if(s.targetConfirmed){
-      const t = shipById(s.aimTargetId);
-      if(!t || t.destroyed){ s.aimTargetId = null; s.targetConfirmed = false; settleTurretWithHull(s); return; }
-      if(s.turretWeapons.some(Boolean)) rotateTurretToward(s, t);
-      s.turretSyncHeading = s.heading;
-    } else {
-      settleTurretWithHull(s);
-    }
-  });
+  state.fleets.player.filter(s=>!s.destroyed && !deadWater(s)).forEach(aimConfirmedTurret);
+}
+function aimConfirmedTurret(s){
+  if(s.targetConfirmed){
+    const t = shipById(s.aimTargetId);
+    if(!t || t.destroyed){ s.aimTargetId = null; s.targetConfirmed = false; settleTurretWithHull(s); return; }
+    if(s.turretWeapons.some(Boolean)) rotateTurretToward(s, t);
+    s.turretSyncHeading = s.heading;
+  } else {
+    settleTurretWithHull(s);
+  }
 }
 function aiDoFiring(){
   // Note: no purgeDestroyed() here — sinkings from this round's fire aren't marked until
@@ -6107,5 +6200,431 @@ function wireUpPanel(s){
     };
   }
 }
+
+/* ============================== MULTIPLAYER ============================== */
+// Two players, each in their own browser, linked through a small relay server (server/ in this repo) that only passes
+// messages between them. Each copy shows its own fleet as "yours" and the other as the enemy, and the battle is played
+// out on both copies at once:
+//  - each player gives orders to their own ships only; when a phase ends, the two sets of orders are swapped;
+//  - both copies then carry out BOTH fleets' orders, ship by ship, in the same order (the host's fleet first);
+//  - every dice roll comes from a seed the host picks at the start, keyed by what the roll is for (see gameRandom),
+//    so both copies roll the same numbers and show the same hits, misses and critical damage.
+// Annihilation only, for now.
+const MP_PROTOCOL = 1;          // bump whenever these messages change, so two different builds refuse to play each other
+const MP_DEFAULT_SERVER = '';   // a relay address to prefill on the Multiplayer screen, e.g. 'wss://battlefleet.example.org'
+const MP_SERVER_KEY = 'bf.mpServer';
+
+// A number in [0,1) that depends only on the text (cyrb53).
+function mpHash01(str){
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for(let i=0;i<str.length;i++){ const c = str.charCodeAt(i); h1 = Math.imul(h1^c, 2654435761); h2 = Math.imul(h2^c, 1597334677); }
+  h1 = Math.imul(h1^(h1>>>16), 2246822507) ^ Math.imul(h2^(h2>>>13), 3266489909);
+  h2 = Math.imul(h2^(h2>>>16), 2246822507) ^ Math.imul(h1^(h1>>>13), 3266489909);
+  return (4294967296*(2097151&h2) + (h1>>>0)) / 9007199254740992;
+}
+// A game dice roll. In multiplayer the n-th roll for a given tag is the same on both copies.
+function gameRandom(tag){
+  if(!mpActive() || !tag) return Math.random();
+  const n = mp.rollCount[tag] || 0;
+  mp.rollCount[tag] = n+1;
+  return mpHash01(mp.seed+'|'+tag+'|'+n);
+}
+
+/* ---- connection ---- */
+function $mp(id){ return document.getElementById(id); }
+function mpStatus(text, bad){
+  const el = $mp('mpStatus');
+  el.textContent = text || '';
+  el.style.color = bad ? 'var(--bad)' : '';
+}
+function mpSavedServer(){
+  try { return localStorage.getItem(MP_SERVER_KEY) || MP_DEFAULT_SERVER; } catch(e){ return MP_DEFAULT_SERVER; }
+}
+function mpServerUrl(){
+  let url = $mp('mpServerInput').value.trim();
+  if(!url) return '';
+  if(!/^wss?:\/\//i.test(url)) url = url.replace(/^https?:\/\//i, '').replace(/\/+$/, '');
+  if(!/^wss?:\/\//i.test(url)) url = (/^(localhost|127\.|192\.168\.|10\.)/.test(url) ? 'ws://' : 'wss://') + url;
+  try { localStorage.setItem(MP_SERVER_KEY, $mp('mpServerInput').value.trim()); } catch(e){}
+  return url;
+}
+function mpConnect(role, onOpen){
+  const url = mpServerUrl();
+  if(!url){ mpStatus('Enter the address of the multiplayer server first.', true); return; }
+  mpLeave();
+  let ws;
+  try { ws = new WebSocket(url); }
+  catch(e){
+    mpStatus(location.protocol==='https:' && /^ws:/i.test(url)
+      ? 'This page is secure, so the server address must start with wss://'
+      : 'That server address doesn\'t look right.', true);
+    return;
+  }
+  mp.on = true; mp.role = role; mp.ws = ws; mp.opened = false;
+  mpSetLobbyBusy(true);
+  mpStatus('Connecting to the server…');
+  ws.onopen = ()=>{ mp.opened = true; onOpen(); };
+  ws.onmessage = (e)=>{ let m; try { m = JSON.parse(e.data); } catch(err){ return; } mpOnServer(m); };
+  ws.onclose = ()=>{ if(mp.ws===ws) mpConnectionLost(); };
+  ws.onerror = ()=>{};
+}
+function mpSetLobbyBusy(busy){
+  ['mpHostBtn','mpJoinBtn','mpServerInput','mpCodeInput'].forEach(id=>{ $mp(id).disabled = busy; });
+}
+function mpSendRaw(obj){ if(mp.ws && mp.ws.readyState===1) mp.ws.send(JSON.stringify(obj)); }
+function mpSend(d){ mpSendRaw({t:'msg', d}); }
+function mpOnServer(m){
+  if(m.t==='hosted'){
+    mp.code = m.code;
+    $mp('mpCodeText').textContent = m.code;
+    $mp('mpCodeShow').style.display = 'block';
+    mpStatus('Send this code to your opponent. Waiting for them to join…');
+  } else if(m.t==='joined'){
+    mp.code = m.code; mp.peer = true;
+    mpStatus('Joined! Saying hello…');
+    mpSend({k:'hello', v:MP_PROTOCOL});
+  } else if(m.t==='peer-joined'){
+    mp.peer = true;
+    mpStatus('Your opponent has joined! Saying hello…');
+    mpSend({k:'hello', v:MP_PROTOCOL});
+  } else if(m.t==='peer-left'){
+    mp.peer = false;
+    mpOpponentLeft();
+  } else if(m.t==='error'){
+    if(!mp.code){ const ws = mp.ws; mp.ws = null; if(ws) ws.close(); mpResetSession(); mpSetLobbyBusy(false); }
+    mpStatus(m.msg || 'The server refused that.', true);
+  } else if(m.t==='msg' && m.d && typeof m.d==='object'){
+    mpOnMessage(m.d);
+  }
+}
+// The socket closed without us leaving: the server or the internet connection went away.
+function mpConnectionLost(){
+  const wasOpen = mp.opened, inBattle = mpActive() && !state.gameOver;
+  const inSetup = mp.on && !mp.started && mp.peer;
+  mp.ws = null;
+  if(inBattle){
+    mp.waitFor = null;
+    logMsg('dmg', 'The connection to the multiplayer server was lost, so the battle cannot go on.');
+    endGame(null, 'lost');
+    return;
+  }
+  mpResetSession();
+  if(inSetup){ mpBackToMenu('The connection to the multiplayer server was lost.'); return; }
+  mpSetLobbyBusy(false);
+  $mp('mpCodeShow').style.display = 'none';
+  mpStatus(wasOpen ? 'The connection to the server was lost.' : 'Couldn\'t reach the server at that address. Check it, and that the server is running.', true);
+}
+function mpOpponentLeft(){
+  if(mpActive()){
+    if(state.gameOver) return;
+    mp.waitFor = null;
+    endGame('player', 'left');
+    return;
+  }
+  if(mp.on && mp.role==='host' && $mp('multiplayerScreen').style.display!=='none'){
+    mpStatus('Your opponent left. Waiting for someone else to join with the same code…');
+    return;
+  }
+  mpLeave();
+  mpBackToMenu('Your opponent left before the battle began.');
+}
+function mpBackToMenu(msg){
+  ['titleScreen','fitmentScreen','formationScreen','multiplayerScreen'].forEach(id=>{ $mp(id).style.display='none'; });
+  ['headingModal','emptySlotsModal','mpWaitModal'].forEach(id=>$mp(id).classList.remove('show'));
+  battleMusic.pause();
+  state.fleets = { player:[], ai:[] };
+  showMainMenu();
+  if(msg) setTimeout(()=>alert(msg), 50);
+}
+function mpResetSession(){
+  Object.assign(mp, { on:false, role:null, code:null, peer:false, started:false, seed:null, rollCount:{}, inbox:{}, waitFor:null,
+    myFleetMsg:null, theirFleetMsg:null, roundSum:{}, desyncWarned:false, opened:false });
+  $mp('mpWaitModal').classList.remove('show');
+  $mp('mpFleetNote').style.display = 'none';
+}
+// Leaves the current multiplayer game, if any (safe to call any time).
+function mpLeave(){
+  const ws = mp.ws;
+  mp.ws = null;
+  if(ws){
+    ws.onclose = null;
+    try { if(ws.readyState===1) ws.send(JSON.stringify({t:'leave'})); ws.close(); } catch(e){}
+  }
+  mpResetSession();
+  $mp('mpCodeShow').style.display = 'none';
+  mpSetLobbyBusy(false);
+}
+function mpShowWait(title, text){
+  $mp('mpWaitTitle').textContent = title;
+  $mp('mpWaitText').textContent = text;
+  $mp('mpWaitModal').classList.add('show');
+}
+
+/* ---- lobby and fleet set-up ---- */
+function mpOnMessage(d){
+  if(d.k==='hello'){
+    if(d.v!==MP_PROTOCOL){
+      mpLeave();
+      mpBackToMenu('Your opponent is playing a different version of the game. Both of you should reload the page and try again.');
+      return;
+    }
+    $mp('multiplayerScreen').style.display = 'none';
+    if(mp.role==='host'){
+      // The host picks the ships; both fleets get the same ones, as in a Skirmish.
+      state.skirmishType = 'annihilation';
+      setBoardSize(1200,800);
+      btSyncSetupBox();
+      $mp('mpFleetNote').style.display = 'block';
+      startMode('multiplayer');
+    } else {
+      mpShowWait('Connected', 'The host is choosing the ships for the battle…');
+    }
+  } else if(d.k==='fleetSize' && mp.role==='guest' && !mp.started){
+    $mp('mpWaitModal').classList.remove('show');
+    state.skirmishType = 'annihilation';
+    setBoardSize(1200,800);
+    state.gameMode = 'multiplayer';
+    SHIP_ORDER.forEach(t=>{ fleetChoice.player[t] = Math.max(0, Math.min(5, parseInt(d.counts && d.counts[t], 10) || 0)); });
+    state.fleets.player = createFleetShips(fleetChoice.player, 'player');
+    state.fleets.ai = [];
+    openFitmentScreen();
+  } else if(d.k==='fleet' && !mp.started){
+    mp.theirFleetMsg = d;
+    if(mp.role==='host' && mp.myFleetMsg) mpHostStartBattle();
+  } else if(d.k==='start' && mp.role==='guest' && !mp.started && mp.theirFleetMsg){
+    mpGuestStartBattle(d);
+  } else if(d.k==='surrender'){
+    if(mpActive() && !state.gameOver){ mp.waitFor = null; endGame('player', 'surrender'); }
+  } else if((d.k==='move' || d.k==='fire' || d.k==='special') && mpActive()){
+    mp.inbox[d.k+'|'+d.r] = d;
+    mpCheckInbox();
+  }
+}
+function mpPackShip(s){
+  const w = e=> e ? e.weapon : null;
+  return { id:s.id, type:s.type, name:s.name||'', formationOffset:s.formationOffset||null,
+    bp:s.broadsidePort.map(w), bs:s.broadsideStarboard.map(w), tw:s.turretWeapons.map(w), tt:s.torpedoTubes.map(t=>t.weapon) };
+}
+function mpUnpackShip(p){
+  if(!p || !SHIP_TYPES[p.type]) return null;
+  const s = makeShip(p.type, 'ai', String(p.id));
+  s.name = String(p.name||'').slice(0, 40);
+  const slot = w=> (w && WEAPONS[w]) ? makeWeaponSlot(w) : null;
+  const fill = (arr, src)=> arr.map((_,i)=> slot(src && src[i]));
+  s.broadsidePort = fill(s.broadsidePort, p.bp);
+  s.broadsideStarboard = fill(s.broadsideStarboard, p.bs);
+  s.turretWeapons = fill(s.turretWeapons, p.tw);
+  s.torpedoTubes.forEach((t,i)=>{
+    const wn = p.tt && p.tt[i];
+    t.weapon = (wn && WEAPONS[wn]) ? wn : null;
+    t.shotsLeft = t.weapon ? WEAPONS[t.weapon].shotsPerTurn : 0;
+    t.shotsReloading = 0;
+  });
+  const fo = p.formationOffset;
+  if(fo && isFinite(fo.right) && isFinite(fo.forward)) s.formationOffset = {right:+fo.right, forward:+fo.forward};
+  return s;
+}
+// Heading chosen: hand our fleet to the opponent and wait for theirs.
+function mpSubmitFleet(){
+  mp.myFleetMsg = {k:'fleet', heading: state.headingPlayer, ships: state.fleets.player.map(mpPackShip)};
+  mpSend(mp.myFleetMsg);
+  mpShowWait('Fleet Ready', 'Waiting for your opponent to finish fitting out their fleet…');
+  if(mp.role==='host' && mp.theirFleetMsg) mpHostStartBattle();
+}
+function mpTakeTheirFleet(){
+  state.fleets.ai = (mp.theirFleetMsg.ships||[]).map(mpUnpackShip).filter(Boolean);
+  state.headingAI = ['North','South','East','West'].includes(mp.theirFleetMsg.heading) ? mp.theirFleetMsg.heading : 'South';
+}
+// The host sets up the battle (sun, islands, starting positions, the dice seed) and sends it all to the guest.
+function mpHostStartBattle(){
+  mpTakeTheirFleet();
+  mp.seed = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  mp.rollCount = {};
+  mp.started = true;
+  $mp('mpWaitModal').classList.remove('show');
+  startGame();
+  const place = {};
+  [...state.fleets.player, ...state.fleets.ai].forEach(s=>{ place[s.id] = [s.x, s.y, s.heading]; });
+  mpSend({k:'start', seed: mp.seed, sunDeg: state.sunDeg, islands: state.islands, place,
+    contested: state.contestedLoser ? (state.contestedLoser==='player' ? 'host' : 'guest') : null});
+}
+function mpGuestStartBattle(d){
+  mpTakeTheirFleet();
+  mp.seed = String(d.seed);
+  mp.rollCount = {};
+  mp.started = true;
+  $mp('mpWaitModal').classList.remove('show');
+  startGame({sunDeg: +d.sunDeg || 0, islands: Array.isArray(d.islands) ? d.islands : [], place: d.place || {}, contested: d.contested});
+}
+function mpApplyPlacement(place){
+  [...state.fleets.player, ...state.fleets.ai].forEach(s=>{
+    const p = place[s.id];
+    if(p){ s.x = +p[0]; s.y = +p[1]; s.heading = +p[2]; }
+    s.turretFacing = s.heading; s.turretSyncHeading = s.heading;
+  });
+}
+
+/* ---- the battle: swapping orders at the end of each phase ---- */
+// Waits for the opponent's orders of this kind for the current round (they may already be here).
+function mpAwait(kind, cb){
+  mp.waitFor = {key: kind+'|'+state.round, cb};
+  updatePhaseBanner();
+  mpCheckInbox();
+}
+function mpCheckInbox(){
+  const w = mp.waitFor;
+  if(!w || !mp.inbox[w.key]) return;
+  const d = mp.inbox[w.key];
+  delete mp.inbox[w.key];
+  mp.waitFor = null;
+  w.cb(d);
+}
+function mpLockOrders(){
+  state.activeSide = 'ai';
+  state.selectedShipIds.clear(); state.selectedShipId = null; state.moveDraft = null;
+  updatePhaseBanner();
+  render(); renderPanel();
+}
+function mpTheirShip(id){ const s = shipById(id); return s && s.side==='ai' ? s : null; }
+
+// A short fingerprint of the battle, taken at the start of each round and swapped with the movement orders. If the
+// two copies ever disagree (they shouldn't), the log says so rather than leaving the players puzzled.
+function mpNoteRoundStart(){
+  const r2 = v=> (Math.round((+v||0)*100)/100).toFixed(2);
+  const parts = allShips().map(s=>[s.id, r2(s.x), r2(s.y), r2(s.heading), s.structureCur,
+    ARCS.map(a=>s.armor[a]+'/'+s.shields[a]).join(','), s.crit ? s.crit.kind : '', s.grounded ? s.grounded.phase : ''].join(':'));
+  parts.push('m'+state.mines.length, 't'+state.torpedoes.length);
+  mp.roundSum[state.round] = mpHash01(parts.join('|')).toString(36).slice(2, 12);
+}
+function mpCheckSum(d){
+  const mine = mp.roundSum[d.r];
+  if(!d.sum || !mine || d.sum===mine || mp.desyncWarned) return;
+  mp.desyncWarned = true;
+  logMsg('dmg', 'Warning: your screen and your opponent\'s no longer show exactly the same battle. Play can go on, but results may differ slightly between you.');
+}
+
+// End of Movement: send where our ships went (and their turret targets), then play out both fleets' moves.
+function mpEndMovement(){
+  mpLockOrders();
+  const ships = state.fleets.player.map(s=>{
+    const e = state.roundMovePaths.find(en=>en.ship===s);
+    return { id:s.id, pts: e ? e.points : null, plan: s.movementPlan||null,
+      x:s.x, y:s.y, heading:s.heading, lastDistance:s.lastDistance, movement:s.movement, distanceMoved:s.distanceMoved,
+      momPrev:s.momPrev||null, structureCur:s.structureCur, destroyed:!!s.destroyed, grounded:s.grounded||null,
+      aimTargetId:s.aimTargetId||null, targetConfirmed:!!s.targetConfirmed, turretFacing:s.turretFacing, turretSyncHeading:s.turretSyncHeading };
+  });
+  mpSend({k:'move', r:state.round, sum:mp.roundSum[state.round], ships});
+  mpAwait('move', mpResolveMovement);
+}
+function mpResolveMovement(d){
+  mpCheckSum(d);
+  (d.ships||[]).forEach(e=>{
+    const s = mpTheirShip(e.id);
+    if(!s || s.destroyed) return;
+    const wasGrounded = s.grounded;
+    if(Array.isArray(e.pts) && e.pts.length>1){
+      state.roundMovePaths.push({ship:s, points:e.pts});
+      s.moveAnim = {points:e.pts, startTime:null, duration:2000}; // held at its old spot until the sweep plays
+    }
+    ['x','y','heading','lastDistance','movement','distanceMoved','momPrev','structureCur','grounded',
+     'aimTargetId','targetConfirmed','turretFacing','turretSyncHeading'].forEach(k=>{ if(k in e) s[k] = e[k]; });
+    s.movementPlan = e.plan || {speed:0, turns:[], minePlacedAtCum:null};
+    if(e.destroyed){
+      s.destroyed = true; s.structureCur = 0;
+      logMsg('dmg', `${shipLabel(s)} strays beyond the edge of the map and is lost, with all hands!`);
+    } else if(!wasGrounded && s.grounded){
+      if(s.grounded.contact) spawnEffect('explosion', s.grounded.contact.x, s.grounded.contact.y);
+      logMsg('dmg', `${shipLabel(s)} runs aground and is stuck fast!`);
+    } else if(wasGrounded && !s.grounded){
+      s.moveAnim = null;
+      logMsg('sys', `${shipLabel(s)} re-floats and is ready to sail again.`);
+    }
+  });
+  logMsg('sys', 'Enemy fleet maneuvers.');
+  checkMineDetonations();
+  resolveMovementCollisions();
+  resolveTurretAiming(); // every ship's final position is known now: swing each turret onto its target
+  render();
+  const winner = checkWin();
+  if(winner){ endGame(winner, winner==='player'?'victory':'defeat'); return; }
+  playMovementAnimation(()=>finishMovementPhase());
+}
+
+// Commence Firing: send our queued volleys (and All Ahead Full moves), then both fleets fire together.
+function mpCommenceFiring(then){
+  mpLockOrders();
+  const ships = state.fleets.player.filter(s=>!s.destroyed).map(s=>({id:s.id, q:s.queuedFire||null, extra:s.extraPlan||null}));
+  mpSend({k:'fire', r:state.round, ships});
+  mpAwait('fire', d=>{
+    const ids = a=> Array.isArray(a) ? a.filter(x=>typeof x==='string') : [];
+    state.fleets.ai.forEach(s=>{ s.queuedFire = null; s.extraPlan = null; });
+    (d.ships||[]).forEach(e=>{
+      const s = mpTheirShip(e.id);
+      if(!s) return;
+      const q = e.q || {};
+      s.queuedFire = { broadsidePort: ids(q.broadsidePort), broadsideStarboard: ids(q.broadsideStarboard), turret: ids(q.turret), torpedo: [] };
+      s.extraPlan = e.extra && isFinite(e.extra.speed) ? {speed:+e.extra.speed, turns:Array.isArray(e.extra.turns)?e.extra.turns:[], minePlacedAtCum:null} : null;
+      s.firingConfirmed = true;
+    });
+    state.activeSide = 'player';
+    state.firingCommenced = true;
+    pendingGunShots = [];
+    pendingEffects = [];
+    allShips().forEach(fireQueuedShots);   // the host's fleet first, on both screens
+    finishCommenceFiring();
+    if(then) then();
+  });
+}
+
+// End of Special Orders: send our course changes, launches, mines and orders, then carry out both fleets' together.
+function mpEndSpecial(){
+  mpLockOrders();
+  const ships = state.fleets.player.filter(s=>!s.destroyed).map(s=>({
+    id:s.id, heading:s.heading, turretFacing:s.turretFacing, turretSyncHeading:s.turretSyncHeading,
+    torp: (s.torpConfirmed && (s.torpSelected||[]).length) ? s.torpSelected.slice() : null,
+    mine: !!s.mineOrderConfirmed,
+    order: (s.flagOrderConfirmed && (s.specialOrderMode==='full' || s.specialOrderMode==='reverse')) ? s.specialOrderMode : null
+  }));
+  mpSend({k:'special', r:state.round, ships});
+  mpAwait('special', d=>{
+    (d.ships||[]).forEach(e=>{
+      const s = mpTheirShip(e.id);
+      if(!s || s.destroyed) return;
+      if(isFinite(e.heading)) s.heading = +e.heading;
+      if(isFinite(e.turretFacing)) s.turretFacing = +e.turretFacing;
+      if(e.turretSyncHeading==null || isFinite(e.turretSyncHeading)) s.turretSyncHeading = e.turretSyncHeading;
+      s.torpSelected = Array.isArray(e.torp) ? e.torp.map(String) : [];
+      s.torpConfirmed = s.torpSelected.length>0;
+      s.mineOrderConfirmed = !!e.mine;
+      s.specialOrderMode = (e.order==='full' || e.order==='reverse') ? e.order : null;
+      s.flagOrderConfirmed = !!s.specialOrderMode;
+    });
+    canonSides().forEach(k=>carryOutSpecialOrders(state.fleets[k]));
+    flushFiringWindowBatch();
+    render();
+    afterWindowsClear(()=>{ state.round++; beginRound(); });
+  });
+}
+
+/* ---- screens ---- */
+$mp('modeMultiplayerBtn').onclick = ()=>{
+  $mp('mainMenuScreen').style.display = 'none';
+  $mp('multiplayerScreen').style.display = 'flex';
+  if(!$mp('mpServerInput').value) $mp('mpServerInput').value = mpSavedServer();
+  if(!mp.on){ mpStatus(''); $mp('mpCodeShow').style.display = 'none'; }
+};
+$mp('mpBackBtn').onclick = ()=>{ mpLeave(); mpStatus(''); $mp('multiplayerScreen').style.display = 'none'; showMainMenu(); };
+$mp('mpHostBtn').onclick = ()=> mpConnect('host', ()=>{ mpStatus('Connected. Creating a game…'); mpSendRaw({t:'host'}); });
+$mp('mpJoinBtn').onclick = ()=>{
+  const code = $mp('mpCodeInput').value.trim().toUpperCase();
+  if(!code){ mpStatus('Type the code your opponent gave you.', true); return; }
+  mpConnect('guest', ()=>{ mpStatus('Connected. Joining game '+code+'…'); mpSendRaw({t:'join', code}); });
+};
+$mp('mpCodeInput').onkeydown = (e)=>{ if(e.key==='Enter') $mp('mpJoinBtn').click(); };
+$mp('mpWaitLeaveBtn').onclick = ()=>{
+  if(!confirm('Leave this multiplayer game?')) return;
+  mpLeave();
+  mpBackToMenu();
+};
 
 /* boot: nothing else to do until user picks fleet */

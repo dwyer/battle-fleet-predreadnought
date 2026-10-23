@@ -1,0 +1,35 @@
+# Battle Fleet multiplayer relay, with Caddy in front of it for HTTPS (secure pages like GitHub Pages can only
+# connect to a secure wss:// address). See README.md in this folder.
+#   cp .env.example .env      then set DOMAIN
+#   docker compose up -d
+# Your router must forward ports 80 and 443 to this machine (80 is only used to get and renew the certificate).
+# Already running a reverse proxy of your own? Start just the relay (docker compose up -d relay) and point your
+# proxy at port 8080 on this machine (RELAY_PORT in .env to change it).
+
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    environment:
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+    ports:
+      - "127.0.0.1:${RELAY_PORT:-8080}:8080"
+
+  caddy:
+    image: caddy:2.8.4-alpine
+    restart: unless-stopped
+    depends_on:
+      - relay
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env (see .env.example)}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,5 @@
+# Caddy gets a free HTTPS certificate for your domain from Let's Encrypt and renews it automatically,
+# then passes the game's connections through to the relay. Nothing to edit here: set DOMAIN in .env.
+{$DOMAIN} {
+	reverse_proxy relay:8080
+}
