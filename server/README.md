@@ -11,7 +11,7 @@ of `game.js`). Players can type a different address on the Multiplayer screen.
 
 - Docker and Docker Compose on an always-on machine.
 - A running **Traefik** on that machine with:
-  - a Docker network the relay can join (default name `traefik`),
+  - a Docker network the relay can join (default name `traefik-public`),
   - an HTTPS entrypoint (default name `websecure`),
   - a certificate resolver named **`le`**.
 - `battle-fleet-relay.dwyer.dev` pointing at that machine.
@@ -43,7 +43,7 @@ The container restarts on its own after a reboot.
 | Setting | Default | What it does |
 |---|---|---|
 | `DOMAIN` | `battle-fleet-relay.dwyer.dev` | The host name Traefik routes to the relay. |
-| `TRAEFIK_NETWORK` | `traefik` | The external Docker network Traefik is on. |
+| `TRAEFIK_NETWORK` | `traefik-public` | The external Docker network Traefik is on. |
 | `TRAEFIK_ENTRYPOINT` | `websecure` | Traefik's HTTPS entrypoint. |
 | `ALLOWED_ORIGINS` | `https://dwyer.github.io,null` | Which web pages may connect, comma-separated. `https://dwyer.github.io` covers the main site and every PR preview; `null` is the game opened straight from a file. Set it empty to allow any page. |
 

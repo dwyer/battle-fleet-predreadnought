@@ -13,7 +13,7 @@ services:
       - traefik
     labels:
       - traefik.enable=true
-      - traefik.docker.network=${TRAEFIK_NETWORK:-traefik}
+      - traefik.docker.network=${TRAEFIK_NETWORK:-traefik-public}
       - traefik.http.routers.battle-fleet-relay.rule=Host(`${DOMAIN:-battle-fleet-relay.dwyer.dev}`)
       - traefik.http.routers.battle-fleet-relay.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
       - traefik.http.routers.battle-fleet-relay.tls=true
@@ -22,5 +22,5 @@ services:
 
 networks:
   traefik:
-    name: ${TRAEFIK_NETWORK:-traefik}
+    name: ${TRAEFIK_NETWORK:-traefik-public}
     external: true
