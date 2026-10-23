@@ -23,10 +23,48 @@
       <span class="mcTag">Coming soon</span><span class="mcName">Missions</span>
       <span class="mcDesc">Scenarios with their own objectives.</span>
     </button>
-    <button class="modeCard" id="modeMultiplayerBtn" disabled>
-      <span class="mcTag">Coming soon</span><span class="mcName">Multiplayer</span>
-      <span class="mcDesc">Face another admiral.</span>
+    <button class="modeCard" id="modeMultiplayerBtn">
+      <span class="mcTag">Play online</span><span class="mcName">Multiplayer</span>
+      <span class="mcDesc">Face another admiral over the internet. One of you hosts and sends the other a code.</span>
     </button>
+  </div>
+</div>
+
+<div id="multiplayerScreen" style="display:none;">
+  <h1>⚓ MULTIPLAYER ⚓</h1>
+  <div class="sub">an Annihilation battle against another admiral</div>
+  <div class="setupBox mpBox">
+    <label class="mpLabel" for="mpServerInput">Server address</label>
+    <input id="mpServerInput" type="text" placeholder="wss://battle-fleet-relay.dwyer.dev" spellcheck="false" autocomplete="off">
+    <div class="mpCols">
+      <div class="mpCol">
+        <h3>Host a game</h3>
+        <p class="smallDim">You choose the ships, then send your opponent the code you're given.</p>
+        <button class="primary" id="mpHostBtn">Host Game</button>
+      </div>
+      <div class="mpCol">
+        <h3>Join a game</h3>
+        <p class="smallDim">Type the code the host sent you.</p>
+        <div class="row" style="gap:8px;">
+          <input id="mpCodeInput" type="text" maxlength="4" placeholder="CODE" spellcheck="false" autocomplete="off">
+          <button class="primary" id="mpJoinBtn">Join</button>
+        </div>
+      </div>
+    </div>
+    <div id="mpCodeShow" style="display:none;">Your game code<b id="mpCodeText"></b></div>
+    <div id="mpStatus"></div>
+    <div class="row" style="justify-content:center;margin-top:12px;">
+      <button id="mpBackBtn">← Main Menu</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="mpWaitModal">
+  <div class="modalBox" style="text-align:center;max-width:440px;">
+    <h1 id="mpWaitTitle">Waiting</h1>
+    <p id="mpWaitText"></p>
+    <div class="mpSpinner"></div>
+    <div class="row" style="justify-content:center;margin-top:10px;"><button id="mpWaitLeaveBtn">Leave Game</button></div>
   </div>
 </div>
 
@@ -55,6 +93,7 @@
   <div class="sub">a d20 tabletop-style naval wargame — turrets, torpedoes, and cold steel</div>
   <div class="setupBox" id="fleetSetupBox">
     <h3 style="color:var(--gold);margin-top:0;">Build Your Fleet</h3>
+    <div id="mpFleetNote" class="smallDim" style="display:none;margin:-4px 0 10px;line-height:1.45;">Multiplayer: your opponent gets the same ships. You each fit out, arrange and choose a heading for your own fleet.</div>
     <div class="fleetPicker" id="fleetPicker"></div>
     <div id="btSetupBox" style="display:none;">
       <h3>Breakthrough Options</h3>
