@@ -3299,16 +3299,16 @@ function kothMakeZones(){
     score:{ player:0, ai:0 }, ready:false };
 }
 // Pick a random spot for a new zone: clear of islands, inside the board, and (where possible) well away from the
-// other live zone and from the zone it replaces, so the fight has to move. The first zones also keep out of the
-// deployment bands so nobody starts the battle already holding one.
+// other live zone and from the zone it replaces, so the fight has to move. The first zones sit near the middle of
+// the board, an even run for both fleets; later ones can appear anywhere.
+const KOTH_FIRST_SPREAD = 175;     // the first zones' centres lie within this distance of the board's centre
 function kothPickSpot(avoid, firstWave){
-  const bt = state.bt, r = KOTH_RADIUS, edge = r + 20;
+  const r = KOTH_RADIUS, edge = r + 20;
   const onIsland = (x,y)=> islandAt(x,y) || [0,1,2,3,4,5,6,7].some(i=>{ const a = i*Math.PI/4; return islandAt(x+Math.cos(a)*r, y+Math.sin(a)*r); });
-  const inBand = (x,y)=> [bt.pRect, bt.aRect].some(b=> x+r > b.x && x-r < b.x+b.w && y+r > b.y && y-r < b.y+b.h);
   for(const spacing of [KOTH_ZONE_SPACING, KOTH_ZONE_SPACING*0.6, 2*r+20, 0]){
     for(let tries=0; tries<200; tries++){
       const x = edge + Math.random()*(BOARD_W-2*edge), y = edge + Math.random()*(BOARD_H-2*edge);
-      if(firstWave && inBand(x,y)) continue;
+      if(firstWave && dist(x,y,BOARD_W/2,BOARD_H/2) > KOTH_FIRST_SPREAD) continue;
       if(avoid.some(p=>dist(x,y,p.x,p.y) < spacing)) continue;
       if(onIsland(x,y)) continue;
       return { x, y };
@@ -3343,7 +3343,7 @@ function kothRenderBriefing(){
     <p>Fight over a series of <b style="color:#ffd84a">capture zones</b> (circles 100" across). Each zone holds a set number of points; when they are all taken the zone disappears and a new one appears somewhere else.</p>
     <ul>
       <li>You deploy on the <b>${bt.pEdge}</b> edge, the enemy on the <b>${bt.aEdge}</b> edge. Both fleets are placed in secret and revealed together.</li>
-      <li>Up to <b>two</b> zones are on the board at once. When one runs dry the next appears at a random spot, well away from where the old one was.</li>
+      <li>Up to <b>two</b> zones are on the board at once. The first ones start near the middle of the board; when one runs dry the next appears at a random spot anywhere on the board, well away from where the old one was.</li>
       <li>A ship is in a zone when its centre is inside the circle. Each ship counts for its class: Frigate 1, Destroyer 1, Light Cruiser 2, Medium Cruiser 2, Heavy Cruiser 3, Battleship 3. A ship that is Dead in the Water counts for half, rounded down.</li>
       <li>At the end of each Firing phase, the side with the higher total in a zone takes points equal to its winning margin (e.g. a Battleship against a lone Frigate takes 2). A tie, or an empty zone, gives nothing.</li>
       <li>The battle ends when every zone has been emptied: the higher score wins (ties go to the larger surviving fleet by weight, then by hull points). Sinking the whole enemy fleet wins at once. Ramming is allowed.</li>
