@@ -2818,7 +2818,7 @@ function btLaneClear(islands, axis){
 }
 function btGenerateIslands(){
   const bt = state.bt;
-  const rects = bt.koth ? [bt.pRect, bt.aRect, kothHillBox()] : [bt.atkRect, bt.defRect, bt.exitRect];
+  const rects = bt.koth ? [bt.pRect, bt.aRect, ...bt.zones.map(kothZoneBox)] : [bt.atkRect, bt.defRect, bt.exitRect];
   for(let tries=0; tries<40; tries++){
     const isl = generateIslands({ ignoreShips:true, avoidRects:rects });
     if(btLaneClear(isl, bt.koth && bt.orient==='ns' ? 'x' : 'y')) return isl;
@@ -2924,7 +2924,7 @@ function btRenderTray(){
   }).join('');
   tray.innerHTML = `<div class="dtHead">DEPLOYMENT <span class="dtRole">${bt.koth?'KING OF THE HILL':(playerAtk?'ATTACKER':'DEFENDER')}</span></div>
     <div class="dtHint">${bt.koth
-      ? `Deploy inside the <b style="color:#5cb8ff">blue</b> band on the ${bt.pEdge} edge. Then fight for the <b style="color:#ffd84a">Hill</b> in the centre of the board.`
+      ? `Deploy inside the <b style="color:#5cb8ff">blue</b> band on the ${bt.pEdge} edge. Then fight for the <b style="color:#ffd84a">capture zones</b>.`
       : playerAtk
       ? `Deploy inside the <b style="color:#ff9a5c">orange</b> band on the ${bt.atkEdge} edge. ★ marks your VIPs. Reach the <b style="color:#4be08a">green</b> Exit Zone.`
       : `Deploy inside the <b style="color:#5cb8ff">blue</b> square. Stop the ★ VIPs reaching the <b style="color:#4be08a">green</b> Exit Zone.`}
@@ -3267,16 +3267,21 @@ function aiBtSteer(s){
 }
 
 /* ============================== KING OF THE HILL ============================== */
-// Two equal fleets deploy hidden on opposite edges of an 800"x800" board. A circular Hill (200" across) sits at the centre.
-// At the end of every Firing phase the side with more presence weight inside the Hill scores a point.
-// First to the target wins; otherwise the higher score when the chosen number of rounds is up. Sinking the enemy fleet wins outright.
-const KOTH_DEPTH = 150, KOTH_RADIUS = 100;
-const KOTH_ROUND_CHOICES = [10,13,15,17];
-const KOTH_TARGET = {10:6, 13:8, 15:9, 17:10};
+// Two equal fleets deploy hidden on opposite edges of an 800"x800" board. Before the battle the player picks how many
+// capture zones the battle will use (1-5) and how many points each one holds. Zones are circles 100" across; up to two
+// are on the board at once. At the end of every Firing phase, whoever has more presence weight in a zone takes points
+// equal to their winning margin out of it. An empty zone disappears and the next one appears somewhere else.
+// The battle ends when every zone is empty (higher score wins) or a fleet is sunk.
+const KOTH_DEPTH = 150, KOTH_RADIUS = 50;
+const KOTH_ZONE_CHOICES = [1,2,3,4,5];
+const KOTH_POINT_CHOICES = [5,10,15,20,25,30];
+const KOTH_MAX_LIVE = 2;           // zones on the board at once
+const KOTH_ZONE_SPACING = 250;     // a new zone keeps this far from the other live zone and from the one it replaces
 const KOTH_WEIGHT = {'Frigate':1,'Destroyer':1,'Light Cruiser':2,'Medium Cruiser':2,'Heavy Cruiser':3,'Battleship':3};
-let kothOpt = { rounds:15 };
-function kothHillBox(){ const h = state.bt.hill; return { x:h.x-h.r, y:h.y-h.r, w:2*h.r, h:2*h.r }; }
-function kothMakeZones(rounds){
+let kothOpt = { zones:3, points:10 };
+function kothZoneBox(z){ return { x:z.x-z.r, y:z.y-z.r, w:2*z.r, h:2*z.r }; }
+function kothLiveZones(){ return state.bt.zones.filter(z=>!z.depleted); }
+function kothMakeZones(){
   const orient = Math.random()<0.5 ? 'ew' : 'ns';
   const playerFirst = Math.random()<0.5;   // which of the two opposite edges the player gets
   let pRect, aRect, pHeading, aHeading, pEdge, aEdge;
@@ -3290,65 +3295,108 @@ function kothMakeZones(rounds){
     else { pRect=south; aRect=north; pHeading=0; aHeading=180; pEdge='south'; aEdge='north'; }
   }
   return { koth:true, orient, pRect, aRect, pHeading, aHeading, pEdge, aEdge,
-    hill:{ x:BOARD_W/2, y:BOARD_H/2, r:KOTH_RADIUS }, rounds, target:KOTH_TARGET[rounds],
-    score:{ player:0, ai:0 }, ready:false, lastHolder:null };
+    zoneCount:kothOpt.zones, zonePoints:kothOpt.points, zones:[],
+    score:{ player:0, ai:0 }, ready:false };
+}
+// Pick a random spot for a new zone: clear of islands, inside the board, and (where possible) well away from the
+// other live zone and from the zone it replaces, so the fight has to move. The first zones also keep out of the
+// deployment bands so nobody starts the battle already holding one.
+function kothPickSpot(avoid, firstWave){
+  const bt = state.bt, r = KOTH_RADIUS, edge = r + 20;
+  const onIsland = (x,y)=> islandAt(x,y) || [0,1,2,3,4,5,6,7].some(i=>{ const a = i*Math.PI/4; return islandAt(x+Math.cos(a)*r, y+Math.sin(a)*r); });
+  const inBand = (x,y)=> [bt.pRect, bt.aRect].some(b=> x+r > b.x && x-r < b.x+b.w && y+r > b.y && y-r < b.y+b.h);
+  for(const spacing of [KOTH_ZONE_SPACING, KOTH_ZONE_SPACING*0.6, 2*r+20, 0]){
+    for(let tries=0; tries<200; tries++){
+      const x = edge + Math.random()*(BOARD_W-2*edge), y = edge + Math.random()*(BOARD_H-2*edge);
+      if(firstWave && inBand(x,y)) continue;
+      if(avoid.some(p=>dist(x,y,p.x,p.y) < spacing)) continue;
+      if(onIsland(x,y)) continue;
+      return { x, y };
+    }
+  }
+  return { x:BOARD_W/2, y:BOARD_H/2 };
+}
+function kothSpawnZone(avoid, firstWave){
+  const bt = state.bt;
+  const others = kothLiveZones().map(z=>({x:z.x,y:z.y}));
+  const p = kothPickSpot(others.concat(avoid||[]), firstWave);
+  const z = { id:bt.zones.length, label:String.fromCharCode(65+bt.zones.length), x:p.x, y:p.y, r:KOTH_RADIUS,
+    total:bt.zonePoints, left:bt.zonePoints, depleted:false };
+  bt.zones.push(z);
+  return z;
+}
+function kothSpawnFirstZones(){
+  const bt = state.bt; bt.zones = [];
+  for(let i=0; i<Math.min(KOTH_MAX_LIVE, bt.zoneCount); i++) kothSpawnZone([], true);
 }
 function kothBriefingStart(){
   $id('fitmentScreen').style.display='none';
-  state.bt = kothMakeZones(kothOpt.rounds);
+  state.bt = kothMakeZones();
   [...state.fleets.player, ...state.fleets.ai].forEach(s=>{ s.isVip=false; s.placed=false; s.extracted=false; s.depPreview=null; });
   kothRenderBriefing();
   $id('btBriefModal').classList.add('show');
 }
 function kothRenderBriefing(){
   const bt = state.bt;
+  const opts = (list, cur, word)=> list.map(n=>`<option value="${n}" ${n===cur?'selected':''}>${n} ${word}${n===1?'':'s'}</option>`).join('');
   $id('btBriefBox').innerHTML = `<h1>King of the Hill — Mission Briefing</h1>
-    <p>Hold the <b style="color:#ffd84a">Hill</b> (the circle at the centre of the board, 200" across) at the end of each Firing phase to score a point.</p>
+    <p>Fight over a series of <b style="color:#ffd84a">capture zones</b> (circles 100" across). Each zone holds a set number of points; when they are all taken the zone disappears and a new one appears somewhere else.</p>
     <ul>
       <li>You deploy on the <b>${bt.pEdge}</b> edge, the enemy on the <b>${bt.aEdge}</b> edge. Both fleets are placed in secret and revealed together.</li>
-      <li>A ship is in the Hill when its centre is inside the circle. Each ship counts for its class: Frigate 1, Destroyer 1, Light Cruiser 2, Medium Cruiser 2, Heavy Cruiser 3, Battleship 3. A ship that is Dead in the Water counts for half, rounded down.</li>
-      <li>The side with the higher total scores 1 point. A tie, or an empty Hill, scores nothing.</li>
-      <li>The first side to reach the target wins. If nobody does by the last round, the higher score wins (ties go to the larger surviving fleet by weight, then by hull points).</li>
-      <li>Sinking the whole enemy fleet wins at once. Ramming is allowed, so you can shove rivals off the Hill.</li>
+      <li>Up to <b>two</b> zones are on the board at once. When one runs dry the next appears at a random spot, well away from where the old one was.</li>
+      <li>A ship is in a zone when its centre is inside the circle. Each ship counts for its class: Frigate 1, Destroyer 1, Light Cruiser 2, Medium Cruiser 2, Heavy Cruiser 3, Battleship 3. A ship that is Dead in the Water counts for half, rounded down.</li>
+      <li>At the end of each Firing phase, the side with the higher total in a zone takes points equal to its winning margin (e.g. a Battleship against a lone Frigate takes 2). A tie, or an empty zone, gives nothing.</li>
+      <li>The battle ends when every zone has been emptied: the higher score wins (ties go to the larger surviving fleet by weight, then by hull points). Sinking the whole enemy fleet wins at once. Ramming is allowed.</li>
     </ul>
-    <h3>Length of battle</h3>
-    <div class="row" id="kothRoundPick" style="justify-content:center;gap:8px;margin:6px 0;">
-      ${KOTH_ROUND_CHOICES.map(n=>`<button data-r="${n}" class="${n===bt.rounds?'primary':''}">${n} rounds<br><small>first to ${KOTH_TARGET[n]}</small></button>`).join('')}
+    <h3>Capture zones</h3>
+    <div class="row" style="justify-content:center;gap:18px;margin:6px 0;align-items:center;font-size:13px;">
+      <label>Number of zones <select id="kothZonePick">${opts(KOTH_ZONE_CHOICES, bt.zoneCount, 'zone')}</select></label>
+      <label>Points per zone <select id="kothPointPick">${opts(KOTH_POINT_CHOICES, bt.zonePoints, 'point')}</select></label>
     </div>
+    <p class="smallDim" style="text-align:center;margin:4px 0;">${bt.zoneCount*bt.zonePoints} points on offer in all.</p>
     <div class="row" style="justify-content:center;margin-top:12px;gap:10px;">
       <button id="btBriefBackBtn">← Back</button>
       <button class="primary" id="btBriefGoBtn">Begin Deployment →</button>
     </div>`;
-  $id('kothRoundPick').querySelectorAll('button').forEach(b=>{
-    b.onclick = ()=>{ const n = +b.dataset.r; kothOpt.rounds = n; bt.rounds = n; bt.target = KOTH_TARGET[n]; kothRenderBriefing(); };
-  });
+  $id('kothZonePick').onchange = (e)=>{ kothOpt.zones = bt.zoneCount = +e.target.value; kothRenderBriefing(); };
+  $id('kothPointPick').onchange = (e)=>{ kothOpt.points = bt.zonePoints = +e.target.value; kothRenderBriefing(); };
   $id('btBriefBackBtn').onclick = ()=>{ $id('btBriefModal').classList.remove('show'); $id('fitmentScreen').style.display='flex'; renderFitmentScreen(); };
-  $id('btBriefGoBtn').onclick = ()=>{ $id('btBriefModal').classList.remove('show'); btStartDeployment(); };
+  $id('btBriefGoBtn').onclick = ()=>{ $id('btBriefModal').classList.remove('show'); state.islands = []; kothSpawnFirstZones(); btStartDeployment(); };
 }
 
 /* ---------- Scoring ---------- */
-function kothInHill(s){ const h = state.bt.hill; return dist(s.x,s.y,h.x,h.y) <= h.r; }
+function kothInZone(s, z){ return dist(s.x,s.y,z.x,z.y) <= z.r; }
 function kothWeightOf(s){
   const w = KOTH_WEIGHT[s.type] || 1;
   return deadWater(s) ? Math.floor(w/2) : w;
 }
-function kothPresence(side){
-  return state.fleets[side].filter(s=>!s.destroyed && s.structureCur>0 && kothInHill(s)).reduce((n,s)=>n+kothWeightOf(s),0);
+function kothPresence(side, z){
+  return state.fleets[side].filter(s=>!s.destroyed && s.structureCur>0 && kothInZone(s, z)).reduce((n,s)=>n+kothWeightOf(s),0);
 }
-function kothHolder(){
-  const p = kothPresence('player'), a = kothPresence('ai');
+function kothHolder(z){
+  const p = kothPresence('player', z), a = kothPresence('ai', z);
   return { p, a, holder: p>a ? 'player' : (a>p ? 'ai' : null) };
 }
 function kothScoreRound(){
   if(!kothActive() || !state.bt.ready) return;
-  const bt = state.bt, h = kothHolder();
-  bt.lastHolder = h.holder;
-  if(h.holder){
-    bt.score[h.holder]++;
-    logMsg(h.holder==='player'?'hit':'dmg', `${h.holder==='player'?'You hold':'The enemy holds'} the Hill (${h.p} vs ${h.a}) and score a point. Score: you ${bt.score.player}, enemy ${bt.score.ai}.`);
-  } else {
-    logMsg('sys', h.p+h.a>0 ? `The Hill is contested (${h.p} vs ${h.a}) — no point scored.` : 'Nobody holds the Hill — no point scored.');
-  }
+  const bt = state.bt, emptied = [];
+  kothLiveZones().forEach(z=>{
+    const h = kothHolder(z);
+    if(!h.holder){
+      logMsg('sys', h.p+h.a>0 ? `Zone ${z.label} is contested (${h.p} vs ${h.a}) — no points taken.` : `Nobody holds Zone ${z.label} — no points taken.`);
+      return;
+    }
+    const take = Math.min(Math.abs(h.p-h.a), z.left);
+    z.left -= take; bt.score[h.holder] += take;
+    logMsg(h.holder==='player'?'hit':'dmg', `${h.holder==='player'?'You hold':'The enemy holds'} Zone ${z.label} (${h.p} vs ${h.a}) and take ${take} point${take===1?'':'s'}. Score: you ${bt.score.player}, enemy ${bt.score.ai}.`);
+    if(z.left<=0){ z.depleted = true; emptied.push(z); logMsg('sys', `Zone ${z.label} is exhausted and disappears.`); }
+  });
+  // replace each emptied zone with the next one, if any remain
+  emptied.forEach(old=>{
+    if(bt.zones.length >= bt.zoneCount) return;
+    const z = kothSpawnZone([{x:old.x,y:old.y}], false);
+    logMsg('sys', `Zone ${z.label} appears — ${z.total} points to take.`);
+  });
 }
 function kothFleetWeight(side){ return state.fleets[side].filter(s=>!s.destroyed).reduce((n,s)=>n+(KOTH_WEIGHT[s.type]||1),0); }
 function kothHullPoints(side){ return state.fleets[side].filter(s=>!s.destroyed).reduce((n,s)=>n+s.structureCur,0); }
@@ -3362,41 +3410,38 @@ function kothCheckWin(){
 function kothEndCheck(){
   if(!kothActive() || !state.bt.ready) return null;
   const bt = state.bt, sc = bt.score;
+  if(bt.zones.length < bt.zoneCount || kothLiveZones().length) return null;
   const line = `Final score: you ${sc.player}, enemy ${sc.ai}.`;
-  if(sc.player>=bt.target || sc.ai>=bt.target){
-    const w = sc.player>=bt.target ? 'player' : 'ai';
-    state.btEndNote = (w==='player' ? 'VICTORY! You reached the target score first. ' : 'DEFEAT. The enemy reached the target score first. ') + line;
-    return w;
-  }
-  if(state.round >= bt.rounds){
-    let w = null, why = '';
-    if(sc.player!==sc.ai){ w = sc.player>sc.ai ? 'player' : 'ai'; why = 'The rounds are up and the higher score wins. '; }
-    else if(kothFleetWeight('player')!==kothFleetWeight('ai')){ w = kothFleetWeight('player')>kothFleetWeight('ai') ? 'player' : 'ai'; why = 'The rounds are up with the scores tied — the larger surviving fleet wins. '; }
-    else { w = kothHullPoints('player')>=kothHullPoints('ai') ? 'player' : 'ai'; why = 'The rounds are up with the scores and fleets level — the sounder hulls win. '; }
-    state.btEndNote = (w==='player' ? 'VICTORY! ' : 'DEFEAT. ') + why + line;
-    return w;
-  }
-  return null;
+  let w = null, why = '';
+  if(sc.player!==sc.ai){ w = sc.player>sc.ai ? 'player' : 'ai'; why = 'Every zone has been emptied and the higher score wins. '; }
+  else if(kothFleetWeight('player')!==kothFleetWeight('ai')){ w = kothFleetWeight('player')>kothFleetWeight('ai') ? 'player' : 'ai'; why = 'Every zone has been emptied with the scores tied — the larger surviving fleet wins. '; }
+  else { w = kothHullPoints('player')>=kothHullPoints('ai') ? 'player' : 'ai'; why = 'Every zone has been emptied with the scores and fleets level — the sounder hulls win. '; }
+  state.btEndNote = (w==='player' ? 'VICTORY! ' : 'DEFEAT. ') + why + line;
+  return w;
 }
 
 /* ---------- Drawing and HUD ---------- */
 function kothDrawZones(scale){
-  const bt = state.bt, h = bt.hill;
-  const c = worldToScreen(h.x, h.y), e = worldToScreen(h.x+h.r, h.y), R = Math.abs(e.x-c.x);
-  let col = '255,216,74', tag = 'THE HILL';
-  if(bt.ready){
-    const k = kothHolder();
-    if(k.holder==='player'){ col = '92,184,255'; tag = 'THE HILL — YOURS'; }
-    else if(k.holder==='ai'){ col = '255,110,90'; tag = 'THE HILL — ENEMY'; }
-    else if(k.p+k.a>0){ tag = 'THE HILL — CONTESTED'; }
-  }
-  ctx.save();
-  ctx.beginPath(); ctx.arc(c.x, c.y, R, 0, Math.PI*2);
-  ctx.fillStyle = `rgba(${col},0.13)`; ctx.fill();
-  ctx.strokeStyle = `rgb(${col})`; ctx.lineWidth = 3; ctx.setLineDash([]); ctx.stroke();
-  ctx.fillStyle = `rgb(${col})`; ctx.font = 'bold 12px Segoe UI'; ctx.textAlign = 'center';
-  ctx.fillText('♛ '+tag, c.x, c.y - R + 16);
-  ctx.restore();
+  const bt = state.bt;
+  kothLiveZones().forEach(z=>{
+    const c = worldToScreen(z.x, z.y), e = worldToScreen(z.x+z.r, z.y), R = Math.abs(e.x-c.x);
+    let col = '255,216,74', tag = '';
+    if(bt.ready){
+      const k = kothHolder(z);
+      if(k.holder==='player'){ col = '92,184,255'; tag = ' — YOURS'; }
+      else if(k.holder==='ai'){ col = '255,110,90'; tag = ' — ENEMY'; }
+      else if(k.p+k.a>0){ tag = ' — CONTESTED'; }
+    }
+    ctx.save();
+    ctx.beginPath(); ctx.arc(c.x, c.y, R, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(${col},0.13)`; ctx.fill();
+    ctx.strokeStyle = `rgb(${col})`; ctx.lineWidth = 3; ctx.setLineDash([]); ctx.stroke();
+    ctx.fillStyle = `rgb(${col})`; ctx.font = 'bold 12px Segoe UI'; ctx.textAlign = 'center';
+    ctx.fillText(`♛ ZONE ${z.label}${tag}`, c.x, c.y - R - 18);
+    ctx.font = '11px Segoe UI';
+    ctx.fillText(`${z.left} of ${z.total} pts left`, c.x, c.y - R - 5);
+    ctx.restore();
+  });
   if(state.phase==='deploy'){
     const box = (r, fill, stroke, label, bold)=>{
       const a = worldToScreen(r.x, r.y), b = worldToScreen(r.x+r.w, r.y+r.h);
@@ -3411,16 +3456,36 @@ function kothDrawZones(scale){
 function kothUpdateHud(el){
   const bt = state.bt;
   if(state.phase==='deploy'){ el.innerHTML = '<b>KING OF THE HILL</b> · deployment'; return; }
-  const k = kothHolder();
-  const who = k.holder==='player' ? '<span style="color:#5cb8ff">yours</span>' : (k.holder==='ai' ? '<span style="color:#ff7a66">enemy</span>' : (k.p+k.a>0?'contested':'empty'));
-  el.innerHTML = `<span style="color:#ffd84a">♛</span> You <b style="color:#5cb8ff">${bt.score.player}</b> – <b style="color:#ff7a66">${bt.score.ai}</b> Enemy · first to ${bt.target} · Hill: ${who} · <b>R${Math.min(state.round,bt.rounds)}/${bt.rounds}</b>`;
+  const zones = kothLiveZones().map(z=>{
+    const k = kothHolder(z);
+    const who = k.holder==='player' ? '<span style="color:#5cb8ff">yours</span>' : (k.holder==='ai' ? '<span style="color:#ff7a66">enemy</span>' : (k.p+k.a>0?'contested':'empty'));
+    return `${z.label} ${z.left}/${z.total} ${who}`;
+  }).join(' · ');
+  const toCome = bt.zoneCount - bt.zones.length;
+  el.innerHTML = `<span style="color:#ffd84a">♛</span> You <b style="color:#5cb8ff">${bt.score.player}</b> – <b style="color:#ff7a66">${bt.score.ai}</b> Enemy · Zones ${zones}${toCome>0?` · +${toCome} to come`:''}`;
 }
 
 /* ---------- AI ---------- */
-// Head for the Hill, spread out across it, hold it, and fight whatever contests it. Badly hurt ships hang back at the rim.
+// Split the fleet across the live zones (nearest zone first, but a zone that already has fleetmates heading for it looks
+// further away), spread out inside it, hold it, and fight whatever contests it. Badly hurt ships hang back at the rim.
+function kothZoneFor(s){
+  const zones = kothLiveZones();
+  if(!zones.length) return null;
+  const mates = state.fleets.ai.filter(o=>!o.destroyed);
+  const count = zones.map(()=>0);
+  let mine = zones[0];
+  for(const m of mates){
+    let best = 0, bestCost = Infinity;
+    zones.forEach((z,i)=>{ const c = dist(m.x,m.y,z.x,z.y) * (1 + 0.6*count[i]); if(c<bestCost){ bestCost = c; best = i; } });
+    count[best]++;
+    if(m===s){ mine = zones[best]; break; }
+  }
+  return mine;
+}
 function kothSteer(s){
   if(!state.bt.ready) return null;
-  const bt = state.bt, h = bt.hill;
+  const h = kothZoneFor(s);
+  if(!h) return null;
   const foes = state.fleets.player.filter(e=>!e.destroyed);
   if(!foes.length) return null;
   const nearest = foes.reduce((a,b)=> dist(s.x,s.y,a.x,a.y)<dist(s.x,s.y,b.x,b.y)?a:b);
@@ -3428,7 +3493,7 @@ function kothSteer(s){
   const idx = Math.max(0, mates.indexOf(s)), n = Math.max(1, mates.length);
   const dHill = dist(s.x,s.y,h.x,h.y);
   const hurt = s.structureCur < 0.35*s.structureMax;
-  // a personal slot inside the Hill so the fleet doesn't pile onto one point
+  // a personal slot inside the zone so the fleet doesn't pile onto one point
   const ang = (idx/n)*Math.PI*2 + 0.6, rad = h.r*0.5;
   const slot = { x:h.x+Math.cos(ang)*rad, y:h.y+Math.sin(ang)*rad };
   if(hurt && dHill < h.r + 60){
@@ -4564,7 +4629,7 @@ function showSummary(winner, reason){
   }
   if(kothActive() && reason!=='surrender'){
     const k = state.bt.score;
-    btBlock = `<div class="summaryShip"><div class="summaryShipHead"><b style="color:#ffd84a">♛ King of the Hill result</b> <span class="smallDim">You ${k.player} — ${k.ai} Enemy · target ${state.bt.target} · ${Math.min(state.round,state.bt.rounds)} of ${state.bt.rounds} rounds</span></div></div>`;
+    btBlock = `<div class="summaryShip"><div class="summaryShipHead"><b style="color:#ffd84a">♛ King of the Hill result</b> <span class="smallDim">You ${k.player} — ${k.ai} Enemy · ${state.bt.zones.filter(z=>z.depleted).length} of ${state.bt.zoneCount} zone${state.bt.zoneCount===1?'':'s'} emptied · ${state.round} round${state.round===1?'':'s'}</span></div></div>`;
   }
   let html = `<h1 style="color:${titleColor};text-align:center;">${title}</h1>
     ${btBlock}
@@ -5004,7 +5069,7 @@ function advanceToSpecialOrders(){
   purgeDestroyed();
   btExtractionCheck();   // Breakthrough: attackers fully in the Exit Zone leave the battle now
   purgeDestroyed();
-  kothScoreRound();      // King of the Hill: whoever holds the Hill scores
+  kothScoreRound();      // King of the Hill: whoever holds each zone takes points from it
   let winner = checkWin();
   if(!winner) winner = kothEndCheck();
   if(!winner) winner = btRoundLimitReached();
