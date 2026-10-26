@@ -1896,7 +1896,7 @@ function drawWeaponArcs(s, scale){
   // Turret arc: 25° cone in front of current turret facing (independent of hull heading).
   const turretFitted = (!arcOn.turret || deadWater(s)) ? [] : s.turretWeapons.filter(Boolean);
   if(turretFitted.length){
-    drawWedge(getDrawTurretFacing(s), TURRET_CONE_HALF, Math.max(...turretFitted.map(e=>WEAPONS[e.weapon].range)), 0.18);
+    drawWedge(getDrawTurretFacing(s), TURRET_CONE_HALF, turretRangeOf(s), 0.18);
     if(turretOverlayActive()) drawTurretOffTargetIndicator(s, scale);
   }
   // Torpedo lane: a 7° cone from the prow that stops widening at 15" and runs on as a rectangle (see torpedoLaneOutline).
@@ -2168,9 +2168,12 @@ function drawTargetLines(scale){
 // the player is still planning moves (otherwise every ship not yet turned would raise a false alarm).
 function turretOverlayActive(){ return state.phase!=='movement' || state.sweepActive; }
 const turretLabelRects = []; // screen rectangles of the off-target labels drawn so far this frame
+// FOCUS TARGET: for the round after the order, the ship's turrets reach twice as far, but only at its focus target.
+function focusActive(s){ return !!s && s.activeOrder==='focus'; }
+function turretWeaponRange(s, entry){ const r = WEAPONS[entry.weapon].range; return focusActive(s) ? 2*r : r; }
 function turretRangeOf(s){
   const fitted = s.turretWeapons.filter(Boolean);
-  return fitted.length ? Math.max(...fitted.map(e=>WEAPONS[e.weapon].range)) : 0;
+  return fitted.length ? Math.max(...fitted.map(e=>turretWeaponRange(s, e))) : 0;
 }
 // The turret cone on its own (for ships that aren't the selected one, whose full arcs are drawn separately).
 function drawTurretCone(s, scale){
@@ -2546,6 +2549,8 @@ function critNeedsForArmorPct(pct){
 function critMovementPlan(s, plan){
   // FULL REVERSE STOP: no movement orders and no turns; the ship just coasts forward 25% of the distance it last moved.
   if(s.activeOrder==='reverse') return {speed:0.25*(s.lastDistance||0), turns:[], minePlacedAtCum:null};
+  // FOCUS TARGET: holds its heading and repeats the distance it moved last time (critical damage still overrides).
+  if(s.activeOrder==='focus' && !s.crit) return {speed:Math.min(s.movement, s.lastDistance||0), turns:[], minePlacedAtCum:null};
   if(!s.crit) return plan;
   const minSpd = minSpeedFor(s);
   if(s.crit.kind==='dead') return {speed:minSpd, turns:[], minePlacedAtCum:null};
@@ -3304,8 +3309,8 @@ function btRoundLimitReached(){
 /* ---------- AI: choosing where to go ---------- */
 function btMaxRange(s){
   let r = 0;
-  [s.broadsidePort, s.broadsideStarboard, s.turretWeapons].forEach(arr=>arr.forEach(e=>{ if(e) r = Math.max(r, WEAPONS[e.weapon].range); }));
-  return r || 40;
+  [s.broadsidePort, s.broadsideStarboard].forEach(arr=>arr.forEach(e=>{ if(e) r = Math.max(r, WEAPONS[e.weapon].range); }));
+  return Math.max(r, turretRangeOf(s)) || 40;
 }
 function btProjectVip(v, k){
   const g = state.bt.gate, d = dist(v.x,v.y,g.x,g.y);
@@ -3899,7 +3904,7 @@ function beginRound(){
   // Orders chosen in the last Special Orders phase now take effect: All Ahead Full (an extra move in this round's
   // Firing phase) or Full Reverse Stop (no ordinary move this Movement phase).
   allShips().forEach(s=>{ s.activeOrder = s.nextOrder || null; s.nextOrder = null; s.extraPlan = null; });
-  allShips().filter(s=>!s.destroyed && s.activeOrder).forEach(s=>{
+  allShips().filter(s=>!s.destroyed && s.activeOrder && s.activeOrder!=='focus').forEach(s=>{   // (Focus Target is announced with its move below)
     logMsg('sys', `${shipLabel(s)} is under orders: ${s.activeOrder==='full'?'ALL AHEAD FULL (it will make an extra move instead of firing)':'FULL REVERSE STOP (it only coasts, and is easier to hit)'}.`);
   });
   allShips().forEach(advanceCriticalState); // repair rolls for crippled ships (both fleets)
@@ -3920,8 +3925,21 @@ function beginRound(){
   state.roundMovePaths = [];
   if(mpActive()) mpNoteRoundStart();
   // A ship that is dead in the water can't be given movement orders: it coasts on its own at minimum speed.
-  const coasters = state.fleets.player.filter(s=>!s.destroyed && !s.movementPlan && !s.grounded && (s.activeOrder==='reverse' || (s.crit && s.crit.kind==='dead')));
-  coasters.forEach(s=>{ logMsg('sys', s.activeOrder==='reverse' ? `${shipLabel(s)} goes Full Reverse Stop and only coasts ahead.` : `${shipLabel(s)} is dead in the water and coasts ahead.`); confirmShipMovement(s, defaultMoveDraft(s)); });
+  // Focus Target: the turrets stay locked on the chosen ship for the round (no new target can be picked).
+  allShips().filter(s=>focusActive(s)).forEach(s=>{
+    const t = shipById(s.focusTargetId);
+    if(t && !t.destroyed){ s.aimTargetId = t.id; s.targetConfirmed = true; }
+    else { s.aimTargetId = null; s.targetConfirmed = false; }
+    if(s.side!=='player') logMsg('sys', `${shipLabel(s)} is on Focus Target: it holds course and speed${t && !t.destroyed ? `, turrets locked on ${shipLabel(t)}` : ''}.`);
+  });
+  const coasters = state.fleets.player.filter(s=>!s.destroyed && !s.movementPlan && !s.grounded && (s.activeOrder==='reverse' || s.activeOrder==='focus' || (s.crit && s.crit.kind==='dead')));
+  coasters.forEach(s=>{
+    const t = shipById(s.focusTargetId);
+    logMsg('sys', s.activeOrder==='reverse' ? `${shipLabel(s)} goes Full Reverse Stop and only coasts ahead.`
+      : s.activeOrder==='focus' ? `${shipLabel(s)} is on Focus Target: it holds course and speed${t && !t.destroyed ? `, turrets locked on ${shipLabel(t)}` : ''}.`
+      : `${shipLabel(s)} is dead in the water and coasts ahead.`);
+    confirmShipMovement(s, defaultMoveDraft(s));
+  });
   // (In multiplayer, mines and the win check wait until both fleets have moved: see mpResolveMovement.)
   if(coasters.length && !mpActive()){
     checkMineDetonations();
@@ -4400,9 +4418,10 @@ function shipHasFireTarget(s){
     const d = dist(s.x,s.y,e.x,e.y);
     const bearing = bearingFromTo(s.x,s.y,e.x,e.y);
     const reach = (arr)=> arr.some(en=> WEAPONS[en.weapon].range >= d);
+    const turReach = tur.some(en=> turretWeaponRange(s, en) >= d) && (!focusActive(s) || e.id===s.focusTargetId);
     const ok = (port.length && reach(port) && inBroadsideArc(s.heading, bearing, 'port'))
             || (stbd.length && reach(stbd) && inBroadsideArc(s.heading, bearing, 'starboard'))
-            || (tur.length && reach(tur) && inTurretArc(s.turretFacing, bearing));
+            || (tur.length && turReach && inTurretArc(s.turretFacing, bearing));
     return ok && !lineBlockedByIsland(s.x,s.y,e.x,e.y);
   });
 }
@@ -4895,6 +4914,7 @@ function fireTurrets(ship, target){
   if(deadWater(ship)){ logMsg('miss', `${shipLabel(ship)} is dead in the water: its turrets cannot fire.`); return; }
   if(ship.turretWeapons.every(e=>!e)){ logMsg('miss', `${shipLabel(ship)} has no turret weapons fitted.`); return; }
   if(ship.turretWeapons.every(e=>!e || e.shotsLeft<=0)){ logMsg('miss', `${shipLabel(ship)} turrets are out of shots for this turn.`); return; }
+  if(focusActive(ship) && target.id!==ship.focusTargetId){ logMsg('miss', `${shipLabel(ship)} is on Focus Target: its turrets can only fire at the ship they are locked on.`); return; }
   const bearing = bearingFromTo(ship.x,ship.y,target.x,target.y);
   if(!inTurretArc(ship.turretFacing, bearing)) { logMsg('miss', `${shipLabel(ship)} turrets have no target in arc.`); return; }
   const blockingIsland = lineBlockedByIsland(ship.x,ship.y,target.x,target.y);
@@ -4906,7 +4926,7 @@ function fireTurrets(ship, target){
     if(!entry || entry.shotsLeft<=0) return;
     entry.shotsLeft = Math.max(0, entry.shotsLeft - cost);
     const w = WEAPONS[entry.weapon];
-    resolveAttack({range:w.range, damage:w.damage, gunnery:ship.gunnery}, target, bearing, d, entry.weapon+' turret #'+(i+1), entry.weapon, ship);
+    resolveAttack({range:turretWeaponRange(ship, entry), damage:w.damage, gunnery:ship.gunnery}, target, bearing, d, entry.weapon+' turret #'+(i+1), entry.weapon, ship);
   });
 }
 /* ============================== SPECIAL ORDERS PHASE: TORPEDOES, MINES & COURSE ADJUSTMENT ============================== */
@@ -5175,11 +5195,22 @@ function aiDoSpecialAttack(){
         const behind = toExit > Math.max(1,left) * s.baseMovement * s.topSpeedMult * 0.9;
         if(nd>160 || behind) s.nextOrder = 'full';
       }
+      else if(aiFocusPick(s, foes)){ /* Focus Target chosen */ }
       else if(nd>300 && Math.random()<0.5) s.nextOrder = 'full';
       else if(nd<70 && s.structureMax>=30 && s.structureCur>=0.6*s.structureMax && Math.random()<0.15) s.nextOrder = 'reverse';
     }
   });
   flushFiringWindowBatch(); // every AI ship that launched or laid gets its window, staggered like any other batch
+}
+// Focus Target for the AI: now and then, when its nearest enemy is just beyond turret range but within the doubled range.
+function aiFocusPick(s, foes){
+  if(deadWater(s) || !s.turretWeapons.some(Boolean) || Math.random()>=0.35) return false;
+  const r = Math.max(...s.turretWeapons.filter(Boolean).map(e=>WEAPONS[e.weapon].range));
+  const t = foes.reduce((a,b)=> dist(s.x,s.y,a.x,a.y)<dist(s.x,s.y,b.x,b.y)?a:b);
+  const d = dist(s.x,s.y,t.x,t.y);
+  if(d<=r || d>1.7*r) return false;
+  s.nextOrder = 'focus'; s.focusTargetId = t.id;
+  return true;
 }
 function advanceToSpecialOrders(){
   purgeDestroyed();
@@ -5211,11 +5242,11 @@ function endSpecialOrdersPhase(){
   if(state.phase!=='special' || state.activeSide!=='player') return;
   const unconfirmedTorps = state.fleets.player.filter(s=>!s.destroyed && (s.torpSelected||[]).length && !s.torpConfirmed);
   const unconfirmedCourse = state.fleets.player.filter(s=>!s.destroyed && s.specialOrderMode==='course' && !s.courseConfirmed);
-  const unconfirmedFlag = state.fleets.player.filter(s=>!s.destroyed && (s.specialOrderMode==='full'||s.specialOrderMode==='reverse') && !s.flagOrderConfirmed);
+  const unconfirmedFlag = state.fleets.player.filter(s=>!s.destroyed && (s.specialOrderMode==='full'||s.specialOrderMode==='reverse'||s.specialOrderMode==='focus') && !s.flagOrderConfirmed);
   const nT = unconfirmedTorps.length, nC = unconfirmedCourse.length, nF = unconfirmedFlag.length;
   if(nT || nC || nF){
     const parts = [];
-    if(nF) parts.push(`${nF} ship${nF>1?'s have':' has'} an All Ahead Full / Full Reverse Stop order not confirmed`);
+    if(nF) parts.push(`${nF} ship${nF>1?'s have':' has'} an All Ahead Full / Full Reverse Stop / Focus Target order not confirmed`);
     if(nT) parts.push(`${nT} ship${nT>1?'s have':' has'} torpedoes selected but not confirmed`);
     if(nC) parts.push(`${nC} ship${nC>1?'s have':' has'} a course adjustment not confirmed`);
     if(!confirm(`${parts.join('; ')} — they won't take effect. End the phase anyway?`)) return;
@@ -5245,6 +5276,10 @@ function carryOutSpecialOrders(fleet){
   });
   // Confirmed All Ahead Full / Full Reverse Stop orders take effect when the next round begins.
   fleet.filter(s=>!s.destroyed && s.flagOrderConfirmed && (s.specialOrderMode==='full'||s.specialOrderMode==='reverse')).forEach(s=>{ s.nextOrder = s.specialOrderMode; });
+  fleet.filter(s=>!s.destroyed && s.flagOrderConfirmed && s.specialOrderMode==='focus' && shipById(s.focusPick)).forEach(s=>{
+    s.nextOrder = 'focus'; s.focusTargetId = s.focusPick;
+    logMsg('sys', `${shipLabel(s)} will Focus Target on ${shipLabel(shipById(s.focusPick))} next round.`);
+  });
   fleet.forEach(s=>{ s.torpSelected=[]; s.torpConfirmed=false; s.mineOrderConfirmed=false; s.specialOrderMode=null; s.courseAdjustHeading=null; s.courseConfirmed=false; s.flagOrderConfirmed=false; });
 }
 // Calls cb once no firing/impact windows are showing or queued (with a cap so a background tab,
@@ -5501,7 +5536,7 @@ function aiDoMovement(){
       if(aligned && aiPathHitsShip(s, aligned.path)!==Infinity) aligned = null; // not worth ramming a friend for
     }
     // A crippled ship can't steer where it wants: dead in the water it just coasts; with the helm jammed it still picks a speed but the turn is forced.
-    const crippled = (s.crit || s.activeOrder==='reverse') ? critMovementPlan(s, {speed, turns:[{deg:turnAmt}], minePlacedAtCum:null}) : null;
+    const crippled = (s.crit || s.activeOrder==='reverse' || s.activeOrder==='focus') ? critMovementPlan(s, {speed, turns:[{deg:turnAmt}], minePlacedAtCum:null}) : null;
     const {plan, path} = crippled ? {plan:crippled, path:computePath(s, crippled)} : (aligned || aiPlanAvoidingHazards(s, turnAmt, speed, minSpd));
     s.x=path.endX; s.y=path.endY; s.heading=path.endHeading;
     applyMomentum(s, path.totalDist);
@@ -5552,7 +5587,9 @@ function resolveTurretAiming(){
   state.fleets.ai.filter(s=>!s.destroyed && !deadWater(s)).forEach(s=>{
     if(!players.length) return;
     let target = players.reduce((a,b)=> dist(s.x,s.y,a.x,a.y)<dist(s.x,s.y,b.x,b.y)?a:b);
-    if(btActive() && btRoleOf(s)==='defender'){   // a defender shoots a VIP whenever one is in reach
+    const focus = focusActive(s) ? players.find(e=>e.id===s.focusTargetId) : null;
+    if(focus) target = focus;   // Focus Target: locked on
+    else if(btActive() && btRoleOf(s)==='defender'){   // a defender shoots a VIP whenever one is in reach
       const reach = btMaxRange(s), vs = players.filter(e=>e.isVip && dist(s.x,s.y,e.x,e.y)<=reach);
       if(vs.length) target = vs.reduce((a,b)=> dist(s.x,s.y,a.x,a.y)<dist(s.x,s.y,b.x,b.y)?a:b);
     }
@@ -5591,7 +5628,8 @@ function aiDoFiring(){
     const inRange = (weapons)=> weapons.some(e=> e && e.shotsLeft>0 && WEAPONS[e.weapon].range >= d);
     if(inRange(s.broadsidePort)) fireBroadside(s,'port',target);
     if(inRange(s.broadsideStarboard)) fireBroadside(s,'starboard',target);
-    if(!deadWater(s) && inRange(s.turretWeapons)) fireTurrets(s,target);
+    const turretInRange = s.turretWeapons.some(e=> e && e.shotsLeft>0 && turretWeaponRange(s, e) >= d);
+    if(!deadWater(s) && turretInRange && (!focusActive(s) || target.id===s.focusTargetId)) fireTurrets(s,target);
     // (Torpedoes are no longer fired here — they launch as a Special Attack order in the Special Orders phase; see aiDoSpecialAttack.)
   });
 }
@@ -5612,6 +5650,7 @@ function shipListHeadHTML(s, open){
   if(s.grounded) chips.push(`<span class="chip warn">aground</span>`);
   if(s.activeOrder==='full') chips.push(`<span class="chip warn">all ahead full</span>`);
   if(s.activeOrder==='reverse') chips.push(`<span class="chip warn">full reverse</span>`);
+  if(s.activeOrder==='focus') chips.push(`<span class="chip warn">focus target</span>`);
   if(done) chips.push(`<span class="chip done">&#10003;</span>`);
   return `<div class="shipListHead" data-ship="${s.id}" title="${open?'Click to close':'Click to open this ship\'s orders'}">
     <span class="caret">${open?'&#9662;':'&#9656;'}</span>
@@ -5791,7 +5830,7 @@ function fullStatCardHTML(s){
 // Can this (selected) ship be given a turret target right now? Player ship, alive, turrets fitted, and
 // not already locked onto one (it has to be edited first).
 function canPickTurretTarget(sel){
-  return !!sel && !deadWater(sel) && sel.side==='player' && !sel.destroyed && !sel.targetConfirmed && sel.turretWeapons.some(Boolean);
+  return !!sel && !focusActive(sel) && !deadWater(sel) && sel.side==='player' && !sel.destroyed && !sel.targetConfirmed && sel.turretWeapons.some(Boolean);
 }
 // The "Turret Target" card in the Movement stat window: pick an enemy, Confirm Target (then Edit Target
 // to change it). Once confirmed the turret cone swings onto that ship as the fleet moves.
@@ -5806,6 +5845,13 @@ function targetOrdersHTML(s){
     return `<div class="card">
       <h3 style="margin:2px 0;color:var(--gold);">Turret Target</h3>
       <div class="smallDim">No turrets fitted — nothing to aim. (Broadside guns need no aiming.)</div>
+    </div>`;
+  }
+  if(focusActive(s)){
+    const t = shipById(s.focusTargetId);
+    return `<div class="card">
+      <h3 style="margin:2px 0;color:var(--gold);">Turret Target — Focus Target</h3>
+      <div class="smallDim">${t && !t.destroyed ? `Locked on <b>${shipLabel(t)}</b> for this round. The turrets reach twice as far, but only at this ship.` : 'The focus target has been sunk: the turrets have nothing to fire at this round.'}</div>
     </div>`;
   }
   const enemies = state.fleets.ai.filter(e=>!e.destroyed);
@@ -6018,6 +6064,28 @@ function specialOrdersHTML(s){
       <div class="smallDim">${(s.crit||s.grounded)?'Not available while crippled or aground.':'Next round: no shooting, but an extra move after everyone else\'s shots are resolved.'}</div>
       <div style="margin-top:10px;"><button id="chooseReverseBtn" style="width:100%;" ${s.grounded?'disabled':''}>Full Reverse Stop</button></div>
       <div class="smallDim">Next Movement phase: no move or turns, just a coast of 25% of its last move. +3 to hit it with guns that round.</div>
+      ${s.turretWeapons.some(Boolean) ? `<div style="margin-top:10px;"><button id="chooseFocusBtn" style="width:100%;" ${(s.crit||s.grounded)?'disabled':''}>Focus Target</button></div>
+      <div class="smallDim">${(s.crit||s.grounded)?'Not available while crippled or aground.':'Next round: turrets reach twice as far at one chosen enemy. But the ship must hold its heading and repeat its last move\'s distance, and its turrets stay locked on that ship.'}</div>` : ''}
+    </div>`;
+  }
+  if(s.specialOrderMode==='focus'){
+    const locked = !!s.flagOrderConfirmed;
+    const enemies = state.fleets.ai.filter(e=>!e.destroyed);
+    const pick = enemies.find(e=>e.id===s.focusPick) || null;
+    const r = Math.max(...s.turretWeapons.filter(Boolean).map(e=>WEAPONS[e.weapon].range));
+    return `<div class="card">
+      <h3 style="margin:2px 0;color:var(--gold);">Focus Target</h3>
+      <div class="smallDim">For the next round this ship's turrets reach ${2*r}" instead of ${r}", but only at the ship chosen here. In the next Movement phase it cannot turn or pick a new target, and it moves exactly as far as it did last time (${Math.round(Math.min(s.movement, s.lastDistance||0))}"). It returns to normal after the next Firing phase.</div>
+      <div class="row" style="margin-top:6px;"><label>Target: </label>
+        <select id="focusSel" ${locked?'disabled':''}>
+          <option value="">— choose —</option>
+          ${enemies.map(e=>`<option value="${e.id}" ${pick && pick.id===e.id?'selected':''}>${shipLabelTyped(e)} (${Math.round(dist(s.x,s.y,e.x,e.y))}")</option>`).join('')}
+        </select></div>
+      ${locked
+        ? `<div style="margin-top:8px;"><button id="cancelFlagOrderBtn" style="width:100%;">Cancel</button></div>
+           <div class="smallDim" style="text-align:center;">Order confirmed — it takes effect next round.</div>`
+        : `<div style="margin-top:8px;"><button id="confirmFlagOrderBtn" class="primary" style="width:100%;" ${pick?'':'disabled'}>Confirm Order</button></div>
+           <div style="margin-top:6px;"><button id="backFromFlagBtn" style="width:100%;">← Back</button></div>`}
     </div>`;
   }
   if(s.specialOrderMode==='full' || s.specialOrderMode==='reverse'){
@@ -6146,12 +6214,13 @@ function firingOrdersHTML(s){
   const locked = s.firingConfirmed;
   // the target the dropdown currently shows: the player's last pick, else the confirmed turret target, else the first enemy
   const fireSel = enemies.find(e=>e.id===s.fireTargetPick) || (s.targetConfirmed ? enemies.find(e=>e.id===s.aimTargetId) : null) || enemies[0] || null;
+  const focusBlocked = focusActive(s) && (!fireSel || fireSel.id!==s.focusTargetId);   // Focus Target: turrets only at the locked ship
   const halfRate = fireSel && s.turretWeapons.some(Boolean) && turretFireCost(s, fireSel)>1;
   const groupRow = (label, groupKey, queueArr, shotsHTML)=>{
     const max = maxVolleysForGroup(s, groupKey);
     const queuedNames = queueArr.map(id=>{ const t=shipById(id); return t?shipLabel(t):'?'; });
     const btnId = 'fireBtn_'+groupKey;
-    const disabled = locked || max===0 || volleysUsed(s, groupKey, queueArr)>=max;
+    const disabled = locked || max===0 || volleysUsed(s, groupKey, queueArr)>=max || (groupKey==='turret' && focusBlocked);
     const isQueued = queueArr.length>0;
     return `<div>
       <button id="${btnId}" class="${isQueued?'queued':''}" style="width:100%;" ${disabled?'disabled':''}>${label}${max>1?` (${queueArr.length}/${max})`:''}</button>
@@ -6167,6 +6236,7 @@ function firingOrdersHTML(s){
       </select>
     </div>
     ${deadWater(s) && s.turretWeapons.some(Boolean) ? '<div class="smallDim" style="color:#ff9a6c;margin-bottom:4px;">&#9888; Dead in the water: turrets cannot fire. Broadsides still can.</div>' : ''}
+    ${focusActive(s) ? `<div class="smallDim" style="color:var(--gold);margin-bottom:4px;">Focus Target: turrets reach ${turretRangeOf(s)}" this phase, but only at ${shipById(s.focusTargetId) ? shipLabel(shipById(s.focusTargetId)) : 'the locked ship'}.</div>` : ''}
     <div class="grid2">
       ${groupRow('Fire Port Broadside','broadsidePort',q.broadsidePort,shotCirclesHTML(s.broadsidePort))}
       ${groupRow('Fire Starboard Broadside','broadsideStarboard',q.broadsideStarboard,shotCirclesHTML(s.broadsideStarboard))}
@@ -6223,6 +6293,10 @@ function wireUpPanel(s){
     if(cfb) cfb.onclick = ()=>{ s.specialOrderMode='full'; s.flagOrderConfirmed=false; render(); renderPanel(); };
     const crb = document.getElementById('chooseReverseBtn');
     if(crb) crb.onclick = ()=>{ s.specialOrderMode='reverse'; s.flagOrderConfirmed=false; render(); renderPanel(); };
+    const cfc = document.getElementById('chooseFocusBtn');
+    if(cfc) cfc.onclick = ()=>{ s.specialOrderMode='focus'; s.flagOrderConfirmed=false; if(!shipById(s.focusPick)) s.focusPick = s.aimTargetId || null; render(); renderPanel(); };
+    const fsel = document.getElementById('focusSel');
+    if(fsel) fsel.onchange = (e)=>{ s.focusPick = e.target.value || null; render(); renderPanel(); };
     const bff = document.getElementById('backFromFlagBtn');
     if(bff) bff.onclick = ()=>{ s.specialOrderMode=null; s.flagOrderConfirmed=false; render(); renderPanel(); };
     const cfo = document.getElementById('confirmFlagOrderBtn');
@@ -6310,7 +6384,7 @@ function wireUpPanel(s){
 //    so both copies roll the same numbers and show the same hits, misses and critical damage.
 // The host chooses the battle (any Skirmish type) and how long each phase may last. Each player presses
 // Orders Completed when done; when the clock runs out, whatever orders are given so far are sent as they stand.
-const MP_PROTOCOL = 3;          // bump whenever these messages change, so two different builds refuse to play each other
+const MP_PROTOCOL = 4;          // bump whenever these messages change, so two different builds refuse to play each other
 const MP_DEFAULT_SERVER = 'wss://battle-fleet-relay.dwyer.dev';   // prefilled on the Multiplayer screen (a player can type another)
 const MP_SERVER_KEY = 'bf.mpServer';
 
@@ -6701,7 +6775,8 @@ function mpEndSpecial(){
     id:s.id, heading:s.heading, turretFacing:s.turretFacing, turretSyncHeading:s.turretSyncHeading,
     torp: (s.torpConfirmed && (s.torpSelected||[]).length) ? s.torpSelected.slice() : null,
     mine: !!s.mineOrderConfirmed,
-    order: (s.flagOrderConfirmed && (s.specialOrderMode==='full' || s.specialOrderMode==='reverse')) ? s.specialOrderMode : null
+    order: (s.flagOrderConfirmed && (s.specialOrderMode==='full' || s.specialOrderMode==='reverse' || s.specialOrderMode==='focus')) ? s.specialOrderMode : null,
+    focus: s.focusPick || null
   }));
   mpSend({k:'special', r:state.round, ships});
   mpAwait('special', d=>{
@@ -6714,7 +6789,8 @@ function mpEndSpecial(){
       s.torpSelected = Array.isArray(e.torp) ? e.torp.map(String) : [];
       s.torpConfirmed = s.torpSelected.length>0;
       s.mineOrderConfirmed = !!e.mine;
-      s.specialOrderMode = (e.order==='full' || e.order==='reverse') ? e.order : null;
+      s.specialOrderMode = (e.order==='full' || e.order==='reverse' || e.order==='focus') ? e.order : null;
+      s.focusPick = typeof e.focus==='string' ? e.focus : null;
       s.flagOrderConfirmed = !!s.specialOrderMode;
     });
     canonSides().forEach(k=>carryOutSpecialOrders(state.fleets[k]));
