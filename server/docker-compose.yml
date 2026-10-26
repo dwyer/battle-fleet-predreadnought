@@ -1,0 +1,26 @@
+# Battle Fleet multiplayer relay, served through an existing Traefik (which provides HTTPS: secure pages like
+# GitHub Pages can only connect to a secure wss:// address). See README.md in this folder.
+#   docker compose up -d
+# Traefik must be on the Docker network named by TRAEFIK_NETWORK and have a certificate resolver called "le".
+
+services:
+  relay:
+    build: .
+    restart: unless-stopped
+    environment:
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS-https://dwyer.github.io,null}
+    networks:
+      - traefik
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=${TRAEFIK_NETWORK:-traefik-public}
+      - traefik.http.routers.battle-fleet-relay.rule=Host(`${DOMAIN:-battle-fleet-relay.dwyer.dev}`)
+      - traefik.http.routers.battle-fleet-relay.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}
+      - traefik.http.routers.battle-fleet-relay.tls=true
+      - traefik.http.routers.battle-fleet-relay.tls.certresolver=le
+      - traefik.http.services.battle-fleet-relay.loadbalancer.server.port=8080
+
+networks:
+  traefik:
+    name: ${TRAEFIK_NETWORK:-traefik-public}
+    external: true
