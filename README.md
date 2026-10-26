@@ -1,4 +1,4 @@
-# Battle Fleet: Pre-Dreadnought  (build v1.5.0)
+# Battle Fleet: Pre-Dreadnought  (build v1.6.0)
 
 A turn-based, d20-style naval wargame against the computer or another player online, played on a top-down map of the sea.
 Build a fleet (Frigates up to Battleships), fit weapons, deploy, and fight with guns, torpedoes, mines, ramming and
@@ -15,12 +15,14 @@ special orders. It runs entirely in the browser: no install, server or internet 
 ## Multiplayer (Main Menu > Multiplayer)
 A battle between two players over the internet, through a relay server (see `server/`).
 - The relay address is filled in for you (`wss://battle-fleet-relay.dwyer.dev`). The host chooses the battle
-  (**Annihilation** or **King of the Hill**, with its number of capture zones and points per zone) and the **time per
+  (**Annihilation**, **Breakthrough**, or **King of the Hill** with its number of capture zones and points per zone) and the **time per
   phase** (2, 3 or 4 minutes), clicks **Host Game** and sends the other player the 4-letter code; they type it in and
   click **Join**.
 - The host picks the ships, and both fleets get the same ones. Each player fits out their own fleet. In Annihilation
-  each then arranges it and chooses a heading (the same heading gives a contested crossing, as in Skirmish); in King
-  of the Hill each deploys by hand in their own band, in secret.
+  each then arranges it and chooses a heading (the same heading gives a contested crossing, as in Skirmish). In
+  Breakthrough the host picks their role (attacker or defender) and the number of VIPs on the fleet screen, the other
+  player takes the other role, and the attacker picks the VIPs. In Breakthrough and King of the Hill each player deploys
+  by hand, in secret.
 - Each phase, both players give their orders at the same time without seeing the other's, then click
   **Orders Completed**. When both have, both fleets' orders are carried out together, with the same dice results on
   both screens. A clock in the top bar counts down the phase; when it runs out, the orders given so far are sent as
@@ -28,7 +30,7 @@ A battle between two players over the internet, through a relay server (see `ser
   seconds to look before the phase moves on.
 - If a player surrenders or leaves, the other wins.
 
-Campaign and Missions appear on the menu as "coming soon". Breakthrough is single-player only for now.
+Campaign and Missions appear on the menu as "coming soon".
 
 ## How to play
 - **Online:** open the GitHub Pages site for this repo (every change merged to `main` is published there within a minute or two).
@@ -47,7 +49,7 @@ map and the wheel zooms. The game saves nothing between sessions.
 - `game.js` - all game logic.
 - `assets/` - images and music, referenced from the code as `assets/<name>`.
 - `docs/Battle_Fleet_Rulebook_v1.3.0.pdf` - the Captain's Rulebook (24 pages), written for build v1.3.0. It does not yet cover
-  v1.3.1-v1.5.0 changes (named AI ships, the All Ahead Full display fix, King of the Hill capture zones, multiplayer).
+  v1.3.1-v1.6.0 changes (named AI ships, the All Ahead Full display fix, King of the Hill capture zones, multiplayer).
 - `server/` - the multiplayer relay server, with a Docker Compose setup for running it at home (see `server/README.md`).
 - `tools/build_single_file.py` - bundles everything above into one self-contained HTML file
   (`python3 tools/build_single_file.py` writes `dist/battle-fleet-predreadnought.html`).

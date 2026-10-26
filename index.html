@@ -41,10 +41,11 @@
         <h3>Host a game</h3>
         <p class="smallDim">You choose the battle and the ships, then send your opponent the code you're given.</p>
         <div class="mpSettings">
-          <label>Battle <select id="mpTypePick"><option value="annihilation">Annihilation</option><option value="koth">King of the Hill</option></select></label>
+          <label>Battle <select id="mpTypePick"><option value="annihilation">Annihilation</option><option value="breakthrough">Breakthrough</option><option value="koth">King of the Hill</option></select></label>
           <label>Time per phase <select id="mpTimePick"><option value="2">2 minutes</option><option value="3" selected>3 minutes</option><option value="4">4 minutes</option></select></label>
           <label class="mpKothOnly">Capture zones <select id="mpZonePick"></select></label>
           <label class="mpKothOnly">Points per zone <select id="mpPointPick"></select></label>
+          <span class="mpBtOnly smallDim" style="grid-column:1/-1;">You pick your role (attacker or defender) and the number of VIPs on the fleet screen. Your opponent takes the other role.</span>
         </div>
         <button class="primary" id="mpHostBtn">Host Game</button>
       </div>

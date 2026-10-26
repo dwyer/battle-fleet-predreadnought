@@ -264,7 +264,7 @@
   .mpSettings{display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin:0 0 10px;font-size:12px;}
   .mpSettings label{display:contents;color:var(--dim);}
   .mpSettings select{width:100%;}
-  .mpSettings .mpKothOnly.hidden{display:none;}
+  .mpSettings .mpKothOnly.hidden, .mpSettings .mpBtOnly.hidden{display:none;}
   #mpClock{font-size:13px;font-weight:bold;letter-spacing:.5px;color:var(--gold);font-variant-numeric:tabular-nums;}
   #mpClock.low{color:var(--bad);}
   #mpCodeShow{margin-top:14px;text-align:center;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);}
