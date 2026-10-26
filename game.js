@@ -430,7 +430,9 @@ const mp = {
   waitFor: null,      // {key, cb} while we wait on the opponent
   myFleetMsg: null, theirFleetMsg: null,
   roundSum: {},       // round -> checksum of the battle at the start of that round
-  desyncWarned: false
+  desyncWarned: false,
+  settings: null,     // what the host chose in the lobby: {type, minutes, zones, points}
+  clock: null         // the phase timer: {key, deadline, onTimeUp}
 };
 function mpActive(){ return mp.on && mp.started; }
 
@@ -502,6 +504,11 @@ document.getElementById('toFormationBtn').onclick = ()=>{
   document.getElementById('emptySlotsModal').classList.add('show');
 };
 function proceedToFormation(){
+  if(mp.on && state.skirmishType==='koth'){   // the host set the zones in the lobby; each player deploys by hand
+    document.getElementById('fitmentScreen').style.display='none';
+    mpSubmitFleet();
+    return;
+  }
   if(state.skirmishType==='breakthrough' || state.skirmishType==='koth'){ proceedToBtBriefing(); return; }
   document.getElementById('fitmentScreen').style.display='none';
   document.getElementById('formationScreen').style.display='flex';
@@ -2935,25 +2942,27 @@ function btAutoPlace(ships){
 }
 
 /* ---------- Deployment screen ---------- */
-function btStartDeployment(){
+// preset (multiplayer): the sun and islands as the host set them up.
+function btStartDeployment(preset){
   const bt = state.bt;
   $id('mainMenuScreen').style.display='none';
   $id('titleScreen').style.display='none';
   $id('app').style.display='flex';
-  state.sunDeg = Math.floor(Math.random()*360);
+  state.sunDeg = preset ? preset.sunDeg : Math.floor(Math.random()*360);
   $id('sunBearing').textContent = state.sunDeg;
-  assignAiNames();
+  if(!mp.on) assignAiNames();
   state.phase = 'deploy'; state.activeSide = 'player'; state.round = 1;
   state.selectedShipIds.clear(); state.selectedShipId = null;
   state.zoom = 1; state.viewCenter = { x:BOARD_W/2, y:BOARD_H/2 };
   $id('roundNo').textContent = '1';
   [...state.fleets.player, ...state.fleets.ai].forEach(s=>{ s.placed=false; s.heading=btDefaultHeading(s); s.depPreview=null; });
-  state.islands = btGenerateIslands();
-  btAutoPlace(state.fleets.ai);                 // the enemy deploys now, hidden until both sides are Ready
+  state.islands = preset ? preset.islands : btGenerateIslands();
+  if(!mp.on) btAutoPlace(state.fleets.ai);      // the enemy deploys now, hidden until both sides are Ready
   battleMusic.currentTime = 0; battleMusic.play().catch(()=>{});
   resizeCanvas();
   state.viewCenter.x = BOARD_W/2 - 160/(fitScale()*state.zoom*PX);   // nudge the board clear of the tray
   logMsg('sys', bt.koth ? 'Deployment: drag your ships from the fleet list into your zone, then press Ready.' : `Deployment: you are the ${bt.playerRole}. Drag your ships from the fleet list onto the board, then press Ready.`);
+  if(mp.on && bt.koth) logMsg('sys', `King of the Hill: ${bt.zoneCount} capture zone${bt.zoneCount===1?'':'s'} of ${bt.zonePoints} points, two on the board at a time. At the end of each Firing phase, the side with more ship weight in a zone takes its winning margin in points. The higher score when every zone is empty wins.`);
   btRenderTray();
   updatePhaseBanner();
   startAnimLoop();
@@ -2993,7 +3002,7 @@ function btRenderTray(){
     <div class="row" style="gap:6px;margin:6px 0;"><button id="dtAuto" style="flex:1;">Auto-place</button><button id="dtReset" style="flex:1;">Reset</button></div>
     <div class="dtList">${rows}</div>
     <div id="dtMsg" class="dtMsg">${keepMsg}</div>
-    <div class="row" style="gap:6px;margin-top:8px;"><button id="dtBack">← Back</button>
+    <div class="row" style="gap:6px;margin-top:8px;"><button id="dtBack" ${mp.on?'style="display:none;"':''}>← Back</button>
       <button class="primary" id="dtReady" style="flex:1;" ${nPlaced<ships.length?'disabled':''}>Ready</button></div>`;
   tray.classList.add('show');
   tray.querySelectorAll('.dtRow').forEach(r=>{
@@ -3196,6 +3205,10 @@ function btReady(){
   if(!ships.every(s=>s.placed)) return;
   $id('deployTray').classList.remove('show');
   state.selectedShipIds.clear(); state.selectedShipId = null;
+  if(mpActive()){ mpDeployReady(); return; }   // multiplayer: wait for the opponent's deployment first
+  btRevealAndFight();
+}
+function btRevealAndFight(){
   [...state.fleets.player, ...state.fleets.ai].forEach(s=>{ s.turretFacing = s.heading; s.turretSyncHeading = s.heading; s.depPreview=null; });
   state.bt.ready = true;
   state.viewCenter = { x:BOARD_W/2, y:BOARD_H/2 };
@@ -3362,12 +3375,12 @@ function kothMakeZones(){
 // other live zone and from the zone it replaces, so the fight has to move. The first zones sit near the middle of
 // the board, an even run for both fleets; later ones can appear anywhere.
 const KOTH_FIRST_SPREAD = 175;     // the first zones' centres lie within this distance of the board's centre
-function kothPickSpot(avoid, firstWave){
+function kothPickSpot(avoid, firstWave, tag){
   const r = KOTH_RADIUS, edge = r + 20;
   const onIsland = (x,y)=> islandAt(x,y) || [0,1,2,3,4,5,6,7].some(i=>{ const a = i*Math.PI/4; return islandAt(x+Math.cos(a)*r, y+Math.sin(a)*r); });
   for(const spacing of [KOTH_ZONE_SPACING, KOTH_ZONE_SPACING*0.6, 2*r+20, 0]){
     for(let tries=0; tries<200; tries++){
-      const x = edge + Math.random()*(BOARD_W-2*edge), y = edge + Math.random()*(BOARD_H-2*edge);
+      const x = edge + gameRandom(tag)*(BOARD_W-2*edge), y = edge + gameRandom(tag)*(BOARD_H-2*edge);
       if(firstWave && dist(x,y,BOARD_W/2,BOARD_H/2) > KOTH_FIRST_SPREAD) continue;
       if(avoid.some(p=>dist(x,y,p.x,p.y) < spacing)) continue;
       if(onIsland(x,y)) continue;
@@ -3379,7 +3392,7 @@ function kothPickSpot(avoid, firstWave){
 function kothSpawnZone(avoid, firstWave){
   const bt = state.bt;
   const others = kothLiveZones().map(z=>({x:z.x,y:z.y}));
-  const p = kothPickSpot(others.concat(avoid||[]), firstWave);
+  const p = kothPickSpot(others.concat(avoid||[]), firstWave, 'kzone|'+bt.zones.length);   // shared dice: same spot on both screens
   const z = { id:bt.zones.length, label:String.fromCharCode(65+bt.zones.length), x:p.x, y:p.y, r:KOTH_RADIUS,
     total:bt.zonePoints, left:bt.zonePoints, depleted:false };
   bt.zones.push(z);
@@ -3475,7 +3488,8 @@ function kothEndCheck(){
   let w = null, why = '';
   if(sc.player!==sc.ai){ w = sc.player>sc.ai ? 'player' : 'ai'; why = 'Every zone has been emptied and the higher score wins. '; }
   else if(kothFleetWeight('player')!==kothFleetWeight('ai')){ w = kothFleetWeight('player')>kothFleetWeight('ai') ? 'player' : 'ai'; why = 'Every zone has been emptied with the scores tied — the larger surviving fleet wins. '; }
-  else { w = kothHullPoints('player')>=kothHullPoints('ai') ? 'player' : 'ai'; why = 'Every zone has been emptied with the scores and fleets level — the sounder hulls win. '; }
+  else if(kothHullPoints('player')!==kothHullPoints('ai') || !mpActive()){ w = kothHullPoints('player')>=kothHullPoints('ai') ? 'player' : 'ai'; why = 'Every zone has been emptied with the scores and fleets level — the sounder hulls win. '; }
+  else { const hostWins = gameRandom('kothTie')<0.5; w = (mp.role==='host')===hostWins ? 'player' : 'ai'; why = 'Every zone has been emptied with everything level — a coin toss decides. '; }
   state.btEndNote = (w==='player' ? 'VICTORY! ' : 'DEFEAT. ') + why + line;
   return w;
 }
@@ -3927,6 +3941,7 @@ function updatePhaseBanner(){
     titleEl.textContent = 'DEPLOYMENT';
     subEl.textContent = 'Place your ships, then press Ready';
     advBtn.style.display='none'; skipBtn.style.display='none';
+    if(mpActive()) mpBannerExtras(subEl, advBtn, skipBtn);
     return;
   }
   advBtn.disabled = false; // default; only the "Commence Firing" branch below overrides this
@@ -3939,6 +3954,7 @@ function updatePhaseBanner(){
     subEl.textContent = 'See the summary';
     advBtn.style.display='none';
     skipBtn.style.display='none';
+    mpClockStop();
     return;
   }
   const phaseNames = {movement:'MOVEMENT', firing:'FIRING', special:'SPECIAL ORDERS'};
@@ -3986,6 +4002,7 @@ function updatePhaseBanner(){
   } else {
     skipBtn.style.display='none';
   }
+  if(mpActive()) mpBannerExtras(subEl, advBtn, skipBtn);
 }
 
 // A ship counts as done for the turn once it's moved (movementPlan set) or is currently
@@ -4385,7 +4402,7 @@ function firingReadiness(){
 function commenceFiringClicked(){
   if(state.phase!=='firing' || state.activeSide!=='player' || state.firingCommenced) return;
   const {eligible, unconfirmed, movers, unplotted} = firingReadiness();
-  if(!eligible.length && !movers.length) return;
+  if(!eligible.length && !movers.length && !mpActive()) return;   // multiplayer: Orders Completed is always allowed
   if(unconfirmed.length || unplotted.length){
     let msg = '';
     if(unconfirmed.length) msg += `${unconfirmed.length===1?'This ship has':'These ships have'} an enemy in range but ${unconfirmed.length===1?'has':'have'} not confirmed targeting:\n${unconfirmed.map(shipLabel).join(', ')}\n(Any volleys already queued will fire; the rest will hold fire.)\n\n`;
@@ -4635,6 +4652,7 @@ function endGame(winner, reason){
   updatePhaseBanner();
   clearCritPopups();
   document.getElementById('shipActionBox').classList.remove('show');
+  document.getElementById('deployTray').classList.remove('show');   // a multiplayer opponent can leave during deployment
   showSummary(winner, reason);
 }
 
@@ -6274,8 +6292,9 @@ function wireUpPanel(s){
 //  - both copies then carry out BOTH fleets' orders, ship by ship, in the same order (the host's fleet first);
 //  - every dice roll comes from a seed the host picks at the start, keyed by what the roll is for (see gameRandom),
 //    so both copies roll the same numbers and show the same hits, misses and critical damage.
-// Annihilation only, for now.
-const MP_PROTOCOL = 1;          // bump whenever these messages change, so two different builds refuse to play each other
+// The host chooses the battle (Annihilation or King of the Hill) and how long each phase may last. Each player presses
+// Orders Completed when done; when the clock runs out, whatever orders are given so far are sent as they stand.
+const MP_PROTOCOL = 2;          // bump whenever these messages change, so two different builds refuse to play each other
 const MP_DEFAULT_SERVER = 'wss://battle-fleet-relay.dwyer.dev';   // prefilled on the Multiplayer screen (a player can type another)
 const MP_SERVER_KEY = 'bf.mpServer';
 
@@ -6334,7 +6353,7 @@ function mpConnect(role, onOpen){
   ws.onerror = ()=>{};
 }
 function mpSetLobbyBusy(busy){
-  ['mpHostBtn','mpJoinBtn','mpServerInput','mpCodeInput'].forEach(id=>{ $mp(id).disabled = busy; });
+  ['mpHostBtn','mpJoinBtn','mpServerInput','mpCodeInput','mpTypePick','mpTimePick','mpZonePick','mpPointPick'].forEach(id=>{ $mp(id).disabled = busy; });
 }
 function mpSendRaw(obj){ if(mp.ws && mp.ws.readyState===1) mp.ws.send(JSON.stringify(obj)); }
 function mpSend(d){ mpSendRaw({t:'msg', d}); }
@@ -6403,7 +6422,8 @@ function mpBackToMenu(msg){
 }
 function mpResetSession(){
   Object.assign(mp, { on:false, role:null, code:null, peer:false, started:false, seed:null, rollCount:{}, inbox:{}, waitFor:null,
-    myFleetMsg:null, theirFleetMsg:null, roundSum:{}, desyncWarned:false, opened:false });
+    myFleetMsg:null, theirFleetMsg:null, roundSum:{}, desyncWarned:false, opened:false, settings:null, lastClockKey:null });
+  mpClockStop();
   $mp('mpWaitModal').classList.remove('show');
   $mp('mpFleetNote').style.display = 'none';
 }
@@ -6436,18 +6456,22 @@ function mpOnMessage(d){
     $mp('multiplayerScreen').style.display = 'none';
     if(mp.role==='host'){
       // The host picks the ships; both fleets get the same ones, as in a Skirmish.
-      state.skirmishType = 'annihilation';
-      setBoardSize(1200,800);
+      mp.settings = mpLobbySettings();
+      mpSend(Object.assign({k:'settings'}, mp.settings));
+      mpUseSettings();
       btSyncSetupBox();
       $mp('mpFleetNote').style.display = 'block';
       startMode('multiplayer');
     } else {
       mpShowWait('Connected', 'The host is choosing the ships for the battle…');
     }
+  } else if(d.k==='settings' && mp.role==='guest' && !mp.started){
+    mp.settings = mpCleanSettings(d);
+    mpShowWait('Connected', `The host has chosen ${mpSettingsText(mp.settings)}. They are now choosing the ships…`);
   } else if(d.k==='fleetSize' && mp.role==='guest' && !mp.started){
     $mp('mpWaitModal').classList.remove('show');
-    state.skirmishType = 'annihilation';
-    setBoardSize(1200,800);
+    if(!mp.settings) mp.settings = mpCleanSettings({});
+    mpUseSettings();
     state.gameMode = 'multiplayer';
     SHIP_ORDER.forEach(t=>{ fleetChoice.player[t] = Math.max(0, Math.min(5, parseInt(d.counts && d.counts[t], 10) || 0)); });
     state.fleets.player = createFleetShips(fleetChoice.player, 'player');
@@ -6460,9 +6484,10 @@ function mpOnMessage(d){
     mpGuestStartBattle(d);
   } else if(d.k==='surrender'){
     if(mpActive() && !state.gameOver){ mp.waitFor = null; endGame('player', 'surrender'); }
-  } else if((d.k==='move' || d.k==='fire' || d.k==='special') && mpActive()){
+  } else if((d.k==='deploy' || d.k==='move' || d.k==='fire' || d.k==='special') && mpActive()){
     mp.inbox[d.k+'|'+d.r] = d;
     mpCheckInbox();
+    if(!state.gameOver) updatePhaseBanner();   // shows that the opponent has completed their orders
   }
 }
 function mpPackShip(s){
@@ -6507,6 +6532,7 @@ function mpHostStartBattle(){
   mp.rollCount = {};
   mp.started = true;
   $mp('mpWaitModal').classList.remove('show');
+  if(state.skirmishType==='koth'){ mpHostStartKoth(); return; }
   startGame();
   const place = {};
   [...state.fleets.player, ...state.fleets.ai].forEach(s=>{ place[s.id] = [s.x, s.y, s.heading]; });
@@ -6519,6 +6545,7 @@ function mpGuestStartBattle(d){
   mp.rollCount = {};
   mp.started = true;
   $mp('mpWaitModal').classList.remove('show');
+  if(state.skirmishType==='koth'){ mpGuestStartKoth(d); return; }
   startGame({sunDeg: +d.sunDeg || 0, islands: Array.isArray(d.islands) ? d.islands : [], place: d.place || {}, contested: d.contested});
 }
 function mpApplyPlacement(place){
@@ -6671,6 +6698,174 @@ function mpEndSpecial(){
   });
 }
 
+/* ---- King of the Hill ---- */
+// The host lays out the board (bands, islands, the first zones) and sends it with the dice seed. Each player then
+// deploys their own fleet in secret; when both have pressed Ready the placements are swapped and the battle begins.
+// Later zones are placed with the shared dice, so both copies put them in the same spot.
+function mpKothResetShips(){
+  [...state.fleets.player, ...state.fleets.ai].forEach(s=>{ s.isVip=false; s.placed=false; s.extracted=false; s.depPreview=null; });
+}
+function mpHostStartKoth(){
+  kothOpt.zones = mp.settings.zones; kothOpt.points = mp.settings.points;
+  state.bt = kothMakeZones();
+  mpKothResetShips();
+  state.islands = [];
+  kothSpawnFirstZones();
+  const islands = btGenerateIslands(), sunDeg = Math.floor(Math.random()*360), bt = state.bt;
+  mpSend({k:'start', seed: mp.seed, sunDeg, islands,
+    koth:{ orient:bt.orient, pRect:bt.pRect, aRect:bt.aRect, pHeading:bt.pHeading, aHeading:bt.aHeading, pEdge:bt.pEdge, aEdge:bt.aEdge, zones:bt.zones }});
+  btStartDeployment({sunDeg, islands});
+}
+function mpGuestStartKoth(d){
+  const k = d.koth || {};
+  kothOpt.zones = mp.settings.zones; kothOpt.points = mp.settings.points;
+  const bt = kothMakeZones();
+  // the host's band is the guest's enemy band, and the other way round
+  Object.assign(bt, { orient:k.orient, pRect:k.aRect, aRect:k.pRect, pHeading:+k.aHeading, aHeading:+k.pHeading, pEdge:k.aEdge, aEdge:k.pEdge,
+    zones:(Array.isArray(k.zones)?k.zones:[]).map(z=>({ id:+z.id, label:String(z.label).slice(0,1), x:+z.x, y:+z.y, r:+z.r, total:+z.total, left:+z.left, depleted:false })) });
+  state.bt = bt;
+  mpKothResetShips();
+  btStartDeployment({sunDeg: +d.sunDeg || 0, islands: Array.isArray(d.islands) ? d.islands : []});
+}
+// Ready pressed: send where our ships are, then reveal both fleets once the opponent's placements arrive.
+function mpDeployReady(){
+  const place = {};
+  state.fleets.player.forEach(s=>{ place[s.id] = [s.x, s.y, s.heading]; });
+  mpSend({k:'deploy', r:1, place});
+  mpAwait('deploy', d=>{
+    const place = d.place || {};
+    state.fleets.ai.forEach(s=>{
+      const p = place[s.id];
+      if(p){ s.x = +p[0]; s.y = +p[1]; s.heading = +p[2]; }
+      s.placed = true;
+    });
+    btRevealAndFight();
+  });
+}
+
+/* ---- host settings, the phase clock and Orders Completed ---- */
+const MP_TIME_CHOICES = [2,3,4];   // minutes per phase the host can pick
+const MP_REVIEW_SECONDS = 30;      // after the Firing results: time to look before the phase moves on by itself
+function mpCleanSettings(d){
+  return { type: d.type==='koth' ? 'koth' : 'annihilation',
+    minutes: MP_TIME_CHOICES.includes(+d.minutes) ? +d.minutes : 3,
+    zones: KOTH_ZONE_CHOICES.includes(+d.zones) ? +d.zones : 3,
+    points: KOTH_POINT_CHOICES.includes(+d.points) ? +d.points : 10 };
+}
+function mpLobbySettings(){
+  return mpCleanSettings({ type:$mp('mpTypePick').value, minutes:$mp('mpTimePick').value, zones:$mp('mpZonePick').value, points:$mp('mpPointPick').value });
+}
+function mpSettingsText(st){
+  const time = `${st.minutes} minutes per phase`;
+  return st.type==='koth' ? `King of the Hill with ${st.zones} capture zone${st.zones===1?'':'s'} of ${st.points} points, ${time}` : `Annihilation, ${time}`;
+}
+function mpUseSettings(){
+  state.skirmishType = mp.settings.type;
+  if(mp.settings.type==='koth') setBoardSize(800,800); else setBoardSize(1200,800);
+  $mp('mpFleetNote').textContent = mp.settings.type==='koth'
+    ? 'Multiplayer: your opponent gets the same ships. You each fit out your own fleet, then deploy it by hand.'
+    : 'Multiplayer: your opponent gets the same ships. You each fit out, arrange and choose a heading for your own fleet.';
+}
+function mpSyncLobby(){
+  const koth = $mp('mpTypePick').value==='koth';
+  document.querySelectorAll('.mpKothOnly').forEach(el=>el.classList.toggle('hidden', !koth));
+}
+// Which set of orders the player is giving right now, as the message kind the opponent sends for it.
+function mpStepKind(){
+  if(state.phase==='deploy') return 'deploy';
+  if(state.phase==='movement') return 'move';
+  if(state.phase==='firing') return state.firingCommenced ? null : 'fire';
+  if(state.phase==='special') return 'special';
+  return null;
+}
+function mpOpponentDone(){ const k = mpStepKind(); return !!(k && mp.inbox[k+'|'+state.round]); }
+function mpTimeUpNote(){ logMsg('sys', 'Time is up — your orders go in as they stand.'); }
+// Called whenever the banner changes: starts the clock for each new set of orders, and hides it while we wait.
+function mpClockSync(){
+  if(!mpActive() || state.gameOver || mp.waitFor || state.activeSide!=='player'){ mpClockStop(); return; }
+  const review = state.phase==='firing' && state.firingCommenced;
+  const key = (review ? 'review' : state.phase)+'|'+state.round;
+  if(mp.clock && mp.clock.key===key) return;
+  if(mp.lastClockKey===key) return;   // this step's time already ran out
+  mp.lastClockKey = key;
+  const secs = review ? MP_REVIEW_SECONDS : mp.settings.minutes*60;
+  mp.clock = { key, deadline: Date.now()+secs*1000, onTimeUp: ()=>mpTimeUp(review) };
+  mpClockTick();
+}
+function mpClockStop(){
+  mp.clock = null;
+  const el = $mp('mpClock');
+  if(el) el.style.display = 'none';
+}
+function mpClockTick(){
+  const c = mp.clock;
+  if(!c) return;
+  const left = Math.max(0, c.deadline - Date.now());
+  const el = $mp('mpClock'), secs = Math.ceil(left/1000);
+  el.style.display = '';
+  el.textContent = `⏱ ${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')} left`;
+  el.classList.toggle('low', secs<=30);
+  if(left<=0){ mpClockStop(); c.onTimeUp(); }
+}
+setInterval(mpClockTick, 250);
+function mpTimeUp(review){
+  if(!mpActive() || state.gameOver || mp.waitFor || state.activeSide!=='player') return;
+  if(state.phase==='deploy'){
+    mpTimeUpNote();
+    state.deployDrag = null;
+    btAutoPlace(state.fleets.player);
+    state.fleets.player.filter(s=>!s.placed).forEach(s=>{   // no room left: drop it in the middle of the band
+      const z = btZoneFor(s); s.x = z.x+z.w/2; s.y = z.y+z.h/2; s.heading = btDefaultHeading(s); s.placed = true;
+    });
+    btReady();
+  } else if(state.phase==='movement'){
+    mpTimeUpNote();
+    mpCompleteMovement(true);
+  } else if(state.phase==='firing' && !state.firingCommenced){
+    mpTimeUpNote();
+    state.fleets.player.filter(s=>!s.destroyed).forEach(s=>{ s.firingConfirmed = true; });
+    commenceFiring();
+  } else if(state.phase==='firing' && review){
+    endFiringPhase();
+  } else if(state.phase==='special'){
+    mpTimeUpNote();
+    mpEndSpecial();
+  }
+}
+// Orders Completed in the Movement phase: the ship being plotted takes the course on screen, and any other ship
+// still without orders holds its course at minimum speed.
+function mpCompleteMovement(timeUp){
+  if(state.phase!=='movement' || state.activeSide!=='player') return;
+  const idle = state.fleets.player.filter(s=>!s.destroyed && !s.movementPlan && !s.grounded);
+  const plotting = idle.find(s=>s.id===state.selectedShipId && state.moveDraft);
+  const n = idle.length - (plotting ? 1 : 0);
+  if(!timeUp && n && !confirm(`${n} ship${n>1?'s have':' has'} no movement orders yet and will hold course at minimum speed. Complete your orders anyway?`)) return;
+  const draft = state.moveDraft;
+  state.moveDraft = null; state.moveTargetDrag = null;
+  idle.forEach(s=>{ s.moveDragPreview = null; confirmShipMovement(s, s===plotting ? draft : defaultMoveDraft(s)); });
+  if(timeUp) advanceToAiMovement(); else endMovementPhase();
+}
+// Multiplayer touches to the phase banner: every set of orders ends with Orders Completed, and the clock and the
+// opponent's progress are shown.
+function mpBannerExtras(subEl, advBtn, skipBtn){
+  if(state.gameOver){ mpClockStop(); return; }
+  const giving = state.activeSide==='player' && !mp.waitFor;
+  if(giving && state.phase==='movement'){
+    advBtn.style.display = 'inline-block';
+    advBtn.textContent = 'Orders Completed ✓';
+    advBtn.onclick = ()=>mpCompleteMovement(false);
+  } else if(giving && state.phase==='firing' && !state.firingCommenced){
+    advBtn.textContent = 'Orders Completed ✓';
+    advBtn.disabled = false; advBtn.title = '';
+    skipBtn.style.display = 'none';
+  } else if(giving && state.phase==='special'){
+    advBtn.textContent = 'Orders Completed ✓';
+  }
+  if(mp.waitFor) subEl.textContent = state.phase==='deploy' ? 'Waiting for your opponent to deploy…' : `Round ${state.round} — waiting for your opponent's orders…`;
+  else if(giving && mpOpponentDone()) subEl.textContent += ' · your opponent is ready';
+  mpClockSync();
+}
+
 /* ---- screens ---- */
 $mp('modeMultiplayerBtn').onclick = ()=>{
   $mp('mainMenuScreen').style.display = 'none';
@@ -6678,6 +6873,10 @@ $mp('modeMultiplayerBtn').onclick = ()=>{
   if(!$mp('mpServerInput').value) $mp('mpServerInput').value = mpSavedServer();
   if(!mp.on){ mpStatus(''); $mp('mpCodeShow').style.display = 'none'; }
 };
+$mp('mpZonePick').innerHTML = KOTH_ZONE_CHOICES.map(n=>`<option value="${n}" ${n===kothOpt.zones?'selected':''}>${n} zone${n===1?'':'s'}</option>`).join('');
+$mp('mpPointPick').innerHTML = KOTH_POINT_CHOICES.map(n=>`<option value="${n}" ${n===kothOpt.points?'selected':''}>${n} points</option>`).join('');
+$mp('mpTypePick').onchange = mpSyncLobby;
+mpSyncLobby();
 $mp('mpBackBtn').onclick = ()=>{ mpLeave(); mpStatus(''); $mp('multiplayerScreen').style.display = 'none'; showMainMenu(); };
 $mp('mpHostBtn').onclick = ()=> mpConnect('host', ()=>{ mpStatus('Connected. Creating a game…'); mpSendRaw({t:'host'}); });
 $mp('mpJoinBtn').onclick = ()=>{

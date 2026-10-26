@@ -13,16 +13,22 @@ special orders. It runs entirely in the browser: no install, server or internet 
   (800" x 800").
 
 ## Multiplayer (Main Menu > Multiplayer)
-An Annihilation battle between two players over the internet, through a relay server (see `server/`).
-- The relay address is filled in for you (`wss://battle-fleet-relay.dwyer.dev`). One player clicks **Host Game** and
-  sends the other the 4-letter code; the other types it in and clicks **Join**.
-- The host picks the ships, and both fleets get the same ones. Each player then fits out, arranges and chooses a
-  heading for their own fleet. Choosing the same heading gives a contested crossing, as in Skirmish.
-- Each phase, both players give their orders at the same time without seeing the other's. When both have ended the
-  phase, both fleets' orders are carried out together, with the same dice results on both screens.
+A battle between two players over the internet, through a relay server (see `server/`).
+- The relay address is filled in for you (`wss://battle-fleet-relay.dwyer.dev`). The host chooses the battle
+  (**Annihilation** or **King of the Hill**, with its number of capture zones and points per zone) and the **time per
+  phase** (2, 3 or 4 minutes), clicks **Host Game** and sends the other player the 4-letter code; they type it in and
+  click **Join**.
+- The host picks the ships, and both fleets get the same ones. Each player fits out their own fleet. In Annihilation
+  each then arranges it and chooses a heading (the same heading gives a contested crossing, as in Skirmish); in King
+  of the Hill each deploys by hand in their own band, in secret.
+- Each phase, both players give their orders at the same time without seeing the other's, then click
+  **Orders Completed**. When both have, both fleets' orders are carried out together, with the same dice results on
+  both screens. A clock in the top bar counts down the phase; when it runs out, the orders given so far are sent as
+  they stand (ships without movement orders hold course at minimum speed). After the Firing results there are 30
+  seconds to look before the phase moves on.
 - If a player surrenders or leaves, the other wins.
 
-Campaign and Missions appear on the menu as "coming soon". Breakthrough and King of the Hill are single-player only for now.
+Campaign and Missions appear on the menu as "coming soon". Breakthrough is single-player only for now.
 
 ## How to play
 - **Online:** open the GitHub Pages site for this repo (every change merged to `main` is published there within a minute or two).

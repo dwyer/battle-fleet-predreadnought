@@ -261,6 +261,12 @@
   .mpCol{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;}
   .mpCol h3{color:var(--gold);font-size:14px;margin:0 0 4px;}
   .mpCol p{margin:0 0 10px;line-height:1.45;}
+  .mpSettings{display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin:0 0 10px;font-size:12px;}
+  .mpSettings label{display:contents;color:var(--dim);}
+  .mpSettings select{width:100%;}
+  .mpSettings .mpKothOnly.hidden{display:none;}
+  #mpClock{font-size:13px;font-weight:bold;letter-spacing:.5px;color:var(--gold);font-variant-numeric:tabular-nums;}
+  #mpClock.low{color:var(--bad);}
   #mpCodeShow{margin-top:14px;text-align:center;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);}
   #mpCodeText{display:block;font-size:40px;letter-spacing:10px;color:var(--gold);margin-top:2px;user-select:all;}
   #mpStatus{margin-top:12px;min-height:18px;font-size:12.5px;color:var(--accent);text-align:center;line-height:1.45;}

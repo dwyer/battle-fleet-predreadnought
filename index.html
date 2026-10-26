@@ -32,14 +32,20 @@
 
 <div id="multiplayerScreen" style="display:none;">
   <h1>⚓ MULTIPLAYER ⚓</h1>
-  <div class="sub">an Annihilation battle against another admiral</div>
+  <div class="sub">a battle against another admiral</div>
   <div class="setupBox mpBox">
     <label class="mpLabel" for="mpServerInput">Server address</label>
     <input id="mpServerInput" type="text" placeholder="wss://battle-fleet-relay.dwyer.dev" spellcheck="false" autocomplete="off">
     <div class="mpCols">
       <div class="mpCol">
         <h3>Host a game</h3>
-        <p class="smallDim">You choose the ships, then send your opponent the code you're given.</p>
+        <p class="smallDim">You choose the battle and the ships, then send your opponent the code you're given.</p>
+        <div class="mpSettings">
+          <label>Battle <select id="mpTypePick"><option value="annihilation">Annihilation</option><option value="koth">King of the Hill</option></select></label>
+          <label>Time per phase <select id="mpTimePick"><option value="2">2 minutes</option><option value="3" selected>3 minutes</option><option value="4">4 minutes</option></select></label>
+          <label class="mpKothOnly">Capture zones <select id="mpZonePick"></select></label>
+          <label class="mpKothOnly">Points per zone <select id="mpPointPick"></select></label>
+        </div>
         <button class="primary" id="mpHostBtn">Host Game</button>
       </div>
       <div class="mpCol">
@@ -344,6 +350,7 @@
     <div id="topbar">
       <div class="topbarSide topbarLeft">
         <span><b>ROUND</b> <span id="roundNo">1</span></span>
+        <span id="mpClock" style="display:none;"></span>
         <span class="smallDim">☀ Sun: <span id="sunBearing">-</span>°</span>
         <span class="smallDim" id="btHud"></span>
         <span class="smallDim" id="topHint">scroll=zoom · right-drag=pan · pick ships from the list</span>
