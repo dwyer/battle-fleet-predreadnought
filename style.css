@@ -127,12 +127,12 @@
     background-image:linear-gradient(rgba(5,10,18,.6),rgba(5,10,18,.6)),var(--ocean-bg);
     background-size:cover;background-position:center;z-index:40;display:flex;
     flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;}
-  #mainMenuScreen,#skirmishTypeScreen{position:fixed;inset:0;background-color:var(--bg);
+  #mainMenuScreen,#skirmishTypeScreen,#multiplayerScreen{position:fixed;inset:0;background-color:var(--bg);
     background-image:linear-gradient(rgba(5,10,18,.55),rgba(5,10,18,.7)),var(--ocean-bg);
     background-size:cover;background-position:center;z-index:45;display:flex;
     flex-direction:column;align-items:center;justify-content:center;gap:16px;text-align:center;padding:20px;box-sizing:border-box;}
-  #mainMenuScreen h1,#skirmishTypeScreen h1{color:var(--accent);font-size:40px;letter-spacing:4px;margin:0;text-shadow:0 0 22px rgba(63,208,255,.45);}
-  #mainMenuScreen .sub,#skirmishTypeScreen .sub{color:var(--dim);font-size:13px;letter-spacing:2px;margin-bottom:10px;}
+  #mainMenuScreen h1,#skirmishTypeScreen h1,#multiplayerScreen h1{color:var(--accent);font-size:40px;letter-spacing:4px;margin:0;text-shadow:0 0 22px rgba(63,208,255,.45);}
+  #mainMenuScreen .sub,#skirmishTypeScreen .sub,#multiplayerScreen .sub{color:var(--dim);font-size:13px;letter-spacing:2px;margin-bottom:10px;}
   .modeGrid{display:grid;grid-template-columns:repeat(2,minmax(240px,300px));gap:14px;margin-top:8px;}
   .modeGrid.three{grid-template-columns:repeat(3,minmax(220px,280px));}
   .modeCard{background:rgba(10,24,38,.88);border:1px solid var(--line);border-radius:10px;padding:16px 18px;text-align:left;
@@ -249,3 +249,28 @@
   .btVipRow span{flex:1;} .btVipRow small{color:var(--dim);}
   #btSetupBox{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);text-align:left;}
   #btSetupBox h3{color:var(--gold);margin:0 0 8px;font-size:14px;}
+  /* Multiplayer lobby */
+  .mpBox{width:min(560px,94vw);text-align:left;}
+  .mpLabel{display:block;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim);margin-bottom:4px;}
+  .mpBox input[type=text]{background:#031018;color:var(--text);border:1px solid var(--line);border-radius:6px;
+    padding:7px 9px;font-size:13px;width:100%;box-sizing:border-box;}
+  .mpBox input[type=text]:focus{outline:none;border-color:var(--accent);}
+  .mpBox input:disabled{opacity:.5;}
+  #mpCodeInput{width:96px;flex:none;text-transform:uppercase;letter-spacing:4px;font-weight:700;text-align:center;}
+  .mpCols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;}
+  .mpCol{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px 12px;}
+  .mpCol h3{color:var(--gold);font-size:14px;margin:0 0 4px;}
+  .mpCol p{margin:0 0 10px;line-height:1.45;}
+  .mpSettings{display:grid;grid-template-columns:auto 1fr;gap:6px 8px;align-items:center;margin:0 0 10px;font-size:12px;}
+  .mpSettings label{display:contents;color:var(--dim);}
+  .mpSettings select{width:100%;}
+  .mpSettings .mpKothOnly.hidden{display:none;}
+  #mpClock{font-size:13px;font-weight:bold;letter-spacing:.5px;color:var(--gold);font-variant-numeric:tabular-nums;}
+  #mpClock.low{color:var(--bad);}
+  #mpCodeShow{margin-top:14px;text-align:center;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:var(--dim);}
+  #mpCodeText{display:block;font-size:40px;letter-spacing:10px;color:var(--gold);margin-top:2px;user-select:all;}
+  #mpStatus{margin-top:12px;min-height:18px;font-size:12.5px;color:var(--accent);text-align:center;line-height:1.45;}
+  .mpSpinner{width:26px;height:26px;margin:6px auto;border:3px solid var(--line);border-top-color:var(--accent);
+    border-radius:50%;animation:mpSpin 1s linear infinite;}
+  @keyframes mpSpin{to{transform:rotate(360deg);}}
+  @media(max-width:560px){.mpCols{grid-template-columns:1fr;}}
