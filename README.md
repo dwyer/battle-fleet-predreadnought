@@ -1,4 +1,4 @@
-# Battle Fleet: Pre-Dreadnought  (build v1.6.0)
+# Battle Fleet: Pre-Dreadnought  (build v1.7.0)
 
 A turn-based, d20-style naval wargame against the computer or another player online, played on a top-down map of the sea.
 Build a fleet (Frigates up to Battleships), fit weapons, deploy, and fight with guns, torpedoes, mines, ramming and
@@ -49,7 +49,7 @@ map and the wheel zooms. The game saves nothing between sessions.
 - `game.js` - all game logic.
 - `assets/` - images and music, referenced from the code as `assets/<name>`.
 - `docs/Battle_Fleet_Rulebook_v1.3.0.pdf` - the Captain's Rulebook (24 pages), written for build v1.3.0. It does not yet cover
-  v1.3.1-v1.6.0 changes (named AI ships, the All Ahead Full display fix, King of the Hill capture zones, multiplayer).
+  v1.3.1-v1.7.0 changes (named AI ships, the All Ahead Full display fix, King of the Hill capture zones, multiplayer, the Focus Target order).
 - `server/` - the multiplayer relay server, with a Docker Compose setup for running it at home (see `server/README.md`).
 - `tools/build_single_file.py` - bundles everything above into one self-contained HTML file
   (`python3 tools/build_single_file.py` writes `dist/battle-fleet-predreadnought.html`).
