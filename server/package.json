@@ -1,0 +1,16 @@
+{
+  "name": "battle-fleet-relay",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Relay server for Battle Fleet: Pre-Dreadnought multiplayer: pairs two players by room code and passes their messages back and forth.",
+  "main": "relay.js",
+  "scripts": {
+    "start": "node relay.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "8.18.3"
+  }
+}
