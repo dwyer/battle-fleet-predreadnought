@@ -3946,6 +3946,7 @@ function beginRound(){
     const winner = checkWin();
     if(winner){ endGame(winner, winner==='player'?'victory':'defeat'); return; }
   }
+  playPhaseBanner('movement');
   updatePhaseBanner();
   renderPanel();
   render();
@@ -4373,6 +4374,31 @@ function playMovementAnimation(callback){
   setTimeout(()=>{ state.sweepActive = false; callback(); }, duration);
 }
 
+/* ============================== PHASE BANNERS ============================== */
+// An animated banner flies across the board as each phase begins: nine frames that build up the banner while it
+// slides in, then it holds and slides away (the movement is CSS: #phaseFlash in style.css).
+const PHASE_BANNER_FRAMES = {
+  movement: ["assets/phase-banner-movement-01.png", "assets/phase-banner-movement-02.png", "assets/phase-banner-movement-03.png", "assets/phase-banner-movement-04.png", "assets/phase-banner-movement-05.png", "assets/phase-banner-movement-06.png", "assets/phase-banner-movement-07.png", "assets/phase-banner-movement-08.png", "assets/phase-banner-movement-09.png"],
+  firing: ["assets/phase-banner-shooting-01.png", "assets/phase-banner-shooting-02.png", "assets/phase-banner-shooting-03.png", "assets/phase-banner-shooting-04.png", "assets/phase-banner-shooting-05.png", "assets/phase-banner-shooting-06.png", "assets/phase-banner-shooting-07.png", "assets/phase-banner-shooting-08.png", "assets/phase-banner-shooting-09.png"],
+  special: ["assets/phase-banner-special-01.png", "assets/phase-banner-special-02.png", "assets/phase-banner-special-03.png", "assets/phase-banner-special-04.png", "assets/phase-banner-special-05.png", "assets/phase-banner-special-06.png", "assets/phase-banner-special-07.png", "assets/phase-banner-special-08.png", "assets/phase-banner-special-09.png"]
+};
+const PHASE_BANNER_FRAME_MS = 85;
+Object.values(PHASE_BANNER_FRAMES).forEach(list=>list.forEach(src=>{ const im = new Image(); im.src = src; }));   // preload so the first one doesn't flicker
+let phaseBannerTimer = null;
+function playPhaseBanner(phase){
+  const frames = PHASE_BANNER_FRAMES[phase], el = document.getElementById('phaseFlash');
+  if(!frames || !el || state.gameOver) return;
+  const img = el.querySelector('img');
+  clearInterval(phaseBannerTimer);
+  let i = 0;
+  img.src = frames[0];
+  el.classList.remove('play'); void el.offsetWidth; el.classList.add('play');   // restart the CSS animation
+  phaseBannerTimer = setInterval(()=>{
+    if(++i >= frames.length){ clearInterval(phaseBannerTimer); return; }
+    img.src = frames[i];
+  }, PHASE_BANNER_FRAME_MS);
+}
+
 function advanceToFiring(){
   state.phase='firing'; state.activeSide='player';
   state.firingCommenced = false;
@@ -4382,6 +4408,7 @@ function advanceToFiring(){
     s.queuedFire = { broadsidePort: [], broadsideStarboard: [], turret: [], torpedo: [] };
     s.firingConfirmed = false;
   });
+  playPhaseBanner('firing');
   updatePhaseBanner();
   pruneSelection();
   render(); renderPanel();
@@ -5248,6 +5275,7 @@ function advanceToSpecialOrders(){
     sh.flagOrderConfirmed = false;   // All Ahead Full / Full Reverse Stop confirmed for the coming round
     sh.activeOrder = null; sh.extraPlan = null; // this round's movement orders (and the +3 against a ship in reverse) end with its Firing phase
   });
+  playPhaseBanner('special');
   updatePhaseBanner();
   pruneSelection();
   render(); renderPanel();

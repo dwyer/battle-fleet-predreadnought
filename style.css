@@ -35,6 +35,17 @@
     padding:12px;box-shadow:0 10px 30px rgba(0,0,0,0.55);display:none;}
   .floatingBox.show{display:block;}
   #firingWindowsLayer{position:absolute;inset:0;pointer-events:none;z-index:16;overflow:hidden;}
+  /* Phase banner: flies in from the left as each phase begins, holds, then flies out to the right. */
+  #phaseFlash{position:absolute;left:50%;top:14%;width:min(460px,60%);pointer-events:none;z-index:17;opacity:0;
+    transform:translateX(-50%);}
+  #phaseFlash img{width:100%;display:block;filter:drop-shadow(0 6px 14px rgba(0,0,0,0.55));}
+  #phaseFlash.play{animation:phaseFlash 2.4s ease-out forwards;}
+  @keyframes phaseFlash{
+    0%{opacity:0;transform:translateX(calc(-50% - 70vw));}
+    18%{opacity:1;transform:translateX(-50%);}
+    80%{opacity:1;transform:translateX(-50%);}
+    100%{opacity:0;transform:translateX(calc(-50% + 70vw));}
+  }
   .firingWindow{position:absolute;width:220px;background:var(--panel);border:1px solid var(--gold);
     border-radius:8px;box-shadow:0 8px 22px rgba(0,0,0,0.6);overflow:hidden;}
   .critPopup{position:absolute;width:268px;background:var(--panel);border:1px solid #c0603a;border-radius:9px;
