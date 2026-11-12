@@ -568,6 +568,8 @@
       also block line of sight: a shot can't reach a target with land directly in the way, even if the target
       sits inside the weapon's arc and range. A selected ship's red firing arcs shade dark wherever an island
       blocks the view through them, and a blocked target is flagged right in the Fire Control target list.
+      Ships block line of sight too: a gun can't fire at a target if any other ship, friend or foe, sits directly
+      between them. (Torpedoes are different: they strike the first ship in their lane.)
       While a ship is aground — frozen or waiting to be re-floated, it doesn't matter which — it's an easy target:
       every attack against it gets +5 on the roll to hit, and its shields don't absorb anything (damage skips
       straight to armor, the same as a mine). Both go away the instant it's re-floated.</p>
@@ -4793,6 +4795,18 @@ function hullCorners(x, y, heading, len, wid){
   const hl = len/2, hw = wid/2;
   return [[1,1],[1,-1],[-1,-1],[-1,1]].map(([a,b])=>({x: x + fx*hl*a + sx*hw*b, y: y + fy*hl*a + sy*hw*b}));
 }
+// Line of sight past ships: a gun's line of fire is blocked by the hull of any other ship in the way, friend or foe.
+// Returns the blocking ship, or null. (Torpedoes are not affected: they already strike the first ship in their lane.
+// Shore batteries, when they arrive, should skip this check both when firing and when fired at.)
+function shipBlockingLine(shooter, target){
+  const x1 = shooter.x, y1 = shooter.y, x2 = target.x, y2 = target.y;
+  return allShips().find(o=>{
+    if(o===shooter || o===target) return false;
+    const c = hullCorners(o.x, o.y, o.heading, o.hullLen, o.hullWide);
+    for(let i=0;i<c.length;i++){ const a = c[i], b = c[(i+1)%c.length]; if(segIntersect(x1,y1,x2,y2,a.x,a.y,b.x,b.y)) return true; }
+    return pointInPolygon(x1, y1, c) || pointInPolygon(x2, y2, c);   // overlapping hulls
+  }) || null;
+}
 function hullsOverlap(A, B){
   const axes = [];
   [A,B].forEach(poly=>{ for(let i=0;i<2;i++){ const p=poly[i], q=poly[i+1]; axes.push({x:-(q.y-p.y), y:q.x-p.x}); } });
@@ -5085,7 +5099,7 @@ function shipHasFireTarget(s){
     const ok = (port.length && reach(port) && inBroadsideArc(s.heading, bearing, 'port'))
             || (stbd.length && reach(stbd) && inBroadsideArc(s.heading, bearing, 'starboard'))
             || (tur.length && turReach && inTurretArc(s.turretFacing, bearing));
-    return ok && !lineBlockedByIsland(s.x,s.y,e.x,e.y);
+    return ok && !lineBlockedByIsland(s.x,s.y,e.x,e.y) && !shipBlockingLine(s, e);
   });
 }
 // Which player ships have something to shoot at, and which of those haven't confirmed targeting yet.
@@ -5558,6 +5572,8 @@ function fireBroadside(ship, side, target){
   if(!inBroadsideArc(ship.heading, bearing, side)){ logMsg('miss', `${shipLabel(ship)} broadside (${side}) has no target in arc.`); return; }
   const blockingIsland = lineBlockedByIsland(ship.x,ship.y,target.x,target.y);
   if(blockingIsland){ logMsg('miss', `${shipLabel(ship)} broadside (${side}) — an island blocks the line of sight to ${shipLabel(target)}.`); return; }
+  const blockingShip = shipBlockingLine(ship, target);
+  if(blockingShip){ logMsg('miss', `${shipLabel(ship)} broadside (${side}) — ${shipLabel(blockingShip)} is in the way of ${shipLabel(target)}.`); return; }
   const d = dist(ship.x,ship.y,target.x,target.y);
   weapons.forEach(entry=>{
     if(!entry || entry.shotsLeft<=0) return; // empty mount, or already out of shots this turn
@@ -5582,6 +5598,8 @@ function fireTurrets(ship, target){
   if(!inTurretArc(ship.turretFacing, bearing)) { logMsg('miss', `${shipLabel(ship)} turrets have no target in arc.`); return; }
   const blockingIsland = lineBlockedByIsland(ship.x,ship.y,target.x,target.y);
   if(blockingIsland){ logMsg('miss', `${shipLabel(ship)} turrets — an island blocks the line of sight to ${shipLabel(target)}.`); return; }
+  const blockingShip = shipBlockingLine(ship, target);
+  if(blockingShip){ logMsg('miss', `${shipLabel(ship)} turrets — ${shipLabel(blockingShip)} is in the way of ${shipLabel(target)}.`); return; }
   const d = dist(ship.x,ship.y,target.x,target.y);
   const cost = turretFireCost(ship, target);
   if(cost>1) logMsg('sys', `${shipLabel(ship)} is firing its turrets at a target in its ${arcOfBearing(ship.heading, bearing)==='prow'?'front':'rear'} arc: half rate (each volley uses up two shots per mount).`);
@@ -6285,6 +6303,12 @@ function aiDoFiring(){
       target = alive.reduce((a,b)=> dist(s.x,s.y,a.x,a.y)<dist(s.x,s.y,b.x,b.y)?a:b);
       s.aimTargetId = target.id;
     }
+    // Something in the way (another ship or an island)? Switch to the nearest enemy it can see, unless locked by Focus Target.
+    const clear = e=> !lineBlockedByIsland(s.x,s.y,e.x,e.y) && !shipBlockingLine(s, e);
+    if(!clear(target) && !focusActive(s)){
+      const alt = state.fleets.player.filter(e=>!e.destroyed && clear(e)).sort((a,b)=> dist(s.x,s.y,a.x,a.y)-dist(s.x,s.y,b.x,b.y))[0];
+      if(alt) target = alt;
+    }
     const d = dist(s.x,s.y,target.x,target.y);
     // Only fire a weapon group when it actually has a mount in range — no point wasting a
     // shot (or popping a Firing Window) on a target the AI could never hit from here.
@@ -6895,7 +6919,7 @@ function firingOrdersHTML(s){
     <h3 style="margin:2px 0;color:var(--gold);">Fire Control</h3>
     <div class="row"><label>Target:</label>
       <select id="fireTargetSel" ${locked?'disabled':''}>
-      ${enemies.map(e=>`<option value="${e.id}" ${fireSel && fireSel.id===e.id?'selected':''}>${shipLabelTyped(e)} (${Math.round(dist(s.x,s.y,e.x,e.y))}")${lineBlockedByIsland(s.x,s.y,e.x,e.y)?' — island blocks LOS':''}</option>`).join('')}
+      ${enemies.map(e=>`<option value="${e.id}" ${fireSel && fireSel.id===e.id?'selected':''}>${shipLabelTyped(e)} (${Math.round(dist(s.x,s.y,e.x,e.y))}")${lineBlockedByIsland(s.x,s.y,e.x,e.y)?' — island blocks LOS':(shipBlockingLine(s,e)?' — ship blocks LOS':'')}</option>`).join('')}
       </select>
     </div>
     ${deadWater(s) && s.turretWeapons.some(Boolean) ? '<div class="smallDim" style="color:#ff9a6c;margin-bottom:4px;">&#9888; Dead in the water: turrets cannot fire. Broadsides still can.</div>' : ''}
