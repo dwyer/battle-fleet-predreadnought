@@ -36,7 +36,20 @@
   .floatingBox.show{display:block;}
   #firingWindowsLayer{position:absolute;inset:0;pointer-events:none;z-index:16;overflow:hidden;}
   /* Phase banner: flies in from the left as each phase begins, holds, then flies out to the right. */
-  #phaseFlash{position:absolute;left:50%;top:14%;width:min(460px,60%);pointer-events:none;z-index:17;opacity:0;
+  /* Stripe behind the banner: opens from a thin line at the banner's middle while the frames play, then fades with it.
+     Its centre line (--stripe-y) and full height (--stripe-h) are set by playPhaseBanner to fit the banner. */
+  #phaseStripe{position:absolute;left:0;right:0;top:var(--stripe-y,30%);height:var(--stripe-h,200px);margin-top:calc(var(--stripe-h,200px) / -2);
+    pointer-events:none;z-index:17;opacity:0;transform:scaleY(0);
+    background:linear-gradient(180deg, rgba(6,16,30,0.82), rgba(12,32,56,0.86) 50%, rgba(6,16,30,0.82));
+    border-top:2px solid var(--gold);border-bottom:2px solid var(--gold);box-shadow:0 0 18px rgba(0,0,0,0.45);}
+  #phaseStripe.play{animation:phaseStripe 2.4s forwards;}
+  @keyframes phaseStripe{
+    0%{opacity:1;transform:scaleY(0.02);animation-timing-function:ease-out;}
+    32%{opacity:1;transform:scaleY(1);}   /* fully open as the banner's last frame appears (9 x 85 ms of 2.4 s) */
+    80%{opacity:1;transform:scaleY(1);}
+    100%{opacity:0;transform:scaleY(1);}
+  }
+  #phaseFlash{position:absolute;left:50%;top:14%;width:min(460px,60%);pointer-events:none;z-index:18;opacity:0;
     transform:translateX(-50%);}
   #phaseFlash img{width:100%;display:block;filter:drop-shadow(0 6px 14px rgba(0,0,0,0.55));}
   #phaseFlash.play{animation:phaseFlash 2.4s ease-out forwards;}

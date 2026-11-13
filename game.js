@@ -4388,11 +4388,16 @@ let phaseBannerTimer = null;
 function playPhaseBanner(phase){
   const frames = PHASE_BANNER_FRAMES[phase], el = document.getElementById('phaseFlash');
   if(!frames || !el || state.gameOver) return;
-  const img = el.querySelector('img');
+  const img = el.querySelector('img'), stripe = document.getElementById('phaseStripe');
   clearInterval(phaseBannerTimer);
   let i = 0;
   img.src = frames[0];
-  el.classList.remove('play'); void el.offsetWidth; el.classList.add('play');   // restart the CSS animation
+  // Fit the stripe behind the banner: centred on it, a little taller than the banner art.
+  const ratio = img.naturalWidth ? img.naturalHeight/img.naturalWidth : 0.7;
+  const h = el.offsetWidth * ratio;
+  stripe.style.setProperty('--stripe-y', (el.offsetTop + h/2)+'px');
+  stripe.style.setProperty('--stripe-h', Math.round(h*1.1)+'px');
+  [el, stripe].forEach(x=>{ x.classList.remove('play'); void x.offsetWidth; x.classList.add('play'); });   // restart both CSS animations together
   phaseBannerTimer = setInterval(()=>{
     if(++i >= frames.length){ clearInterval(phaseBannerTimer); return; }
     img.src = frames[i];
