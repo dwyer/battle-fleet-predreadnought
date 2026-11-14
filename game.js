@@ -378,6 +378,17 @@ function assignAiNames(){
   state.fleets.ai.forEach(sh=>{ if(!sh.name) sh.name = pool.length ? pool.shift() : ''; });   // past 30 ships the default "Type N" label is used
 }
 
+// When the battle starts, each of the player's ships left unnamed gets a name from the same list, never one already in
+// the battle. In multiplayer the host draws from the even-numbered names and the guest from the odd ones, so the two
+// fleets can't end up with the same name.
+function assignPlayerNames(){
+  const named = sh=> !!(sh.name && sh.name.trim());
+  const taken = new Set([...state.fleets.player, ...state.fleets.ai].filter(named).map(sh=>sh.name.trim().toLowerCase()));
+  const pool = AI_SHIP_NAMES.filter((x,i)=> !taken.has(x.toLowerCase()) && (!mp.on || (i%2===0)===(mp.role==='host')));
+  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+  state.fleets.player.forEach(sh=>{ if(!named(sh)) sh.name = pool.length ? pool.shift() : ''; });   // if the list runs out, "Type N" as before
+}
+
 /* ============================== STATE ============================== */
 let state = {
   fleets: { player:[], ai:[] },
@@ -1056,7 +1067,7 @@ function startGame(preset){
     if(preset.contested) logContestedCrossing(preset.contested==='host' ? 'ai' : 'player');
   } else {
     state.sunDeg = Math.floor(Math.random()*360);
-    if(!mp.on) assignAiNames();   // the player may have named a ship after one of the AI's
+    if(!mp.on){ assignPlayerNames(); assignAiNames(); }   // (the player may have named a ship after one of the AI's)
     placeFleets();
     allShips().forEach(s=>{ s.turretSyncHeading = s.heading; });
     state.islands = generateIslands();
@@ -2967,7 +2978,7 @@ function btStartDeployment(preset){
   $id('app').style.display='flex';
   state.sunDeg = preset ? preset.sunDeg : Math.floor(Math.random()*360);
   $id('sunBearing').textContent = state.sunDeg;
-  if(!mp.on) assignAiNames();
+  if(!mp.on){ assignPlayerNames(); assignAiNames(); }
   state.phase = 'deploy'; state.activeSide = 'player'; state.round = 1;
   state.selectedShipIds.clear(); state.selectedShipId = null;
   state.zoom = 1; state.viewCenter = { x:BOARD_W/2, y:BOARD_H/2 };
@@ -6674,6 +6685,7 @@ function mpUnpackShip(p){
 }
 // Heading chosen: hand our fleet to the opponent and wait for theirs.
 function mpSubmitFleet(){
+  assignPlayerNames();   // before packing, so the opponent sees the same names
   mp.myFleetMsg = {k:'fleet', heading: state.headingPlayer, ships: state.fleets.player.map(mpPackShip)};
   mpSend(mp.myFleetMsg);
   mpShowWait('Fleet Ready', 'Waiting for your opponent to finish fitting out their fleet…');
