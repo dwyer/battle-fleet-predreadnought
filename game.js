@@ -3946,7 +3946,8 @@ function beginRound(){
     const winner = checkWin();
     if(winner){ endGame(winner, winner==='player'?'victory':'defeat'); return; }
   }
-  playPhaseBanner('movement');
+  if(state.round===1) playPhaseBanner('commence', ()=>{ if(state.phase==='movement') playPhaseBanner('movement'); });
+  else playPhaseBanner('movement');
   updatePhaseBanner();
   renderPanel();
   render();
@@ -4376,18 +4377,25 @@ function playMovementAnimation(callback){
 
 /* ============================== PHASE BANNERS ============================== */
 // An animated banner flies across the board as each phase begins: nine frames that build up the banner while it
-// slides in, then it holds and slides away (the movement is CSS: #phaseFlash in style.css).
+// slides in, then it holds and slides away (the movement is CSS: #phaseFlash in style.css). "Battle Commence" opens
+// the battle (before round 1's Movement banner) and "Victory" plays when the player wins.
 const PHASE_BANNER_FRAMES = {
   movement: ["assets/phase-banner-movement-01.png", "assets/phase-banner-movement-02.png", "assets/phase-banner-movement-03.png", "assets/phase-banner-movement-04.png", "assets/phase-banner-movement-05.png", "assets/phase-banner-movement-06.png", "assets/phase-banner-movement-07.png", "assets/phase-banner-movement-08.png", "assets/phase-banner-movement-09.png"],
   firing: ["assets/phase-banner-shooting-01.png", "assets/phase-banner-shooting-02.png", "assets/phase-banner-shooting-03.png", "assets/phase-banner-shooting-04.png", "assets/phase-banner-shooting-05.png", "assets/phase-banner-shooting-06.png", "assets/phase-banner-shooting-07.png", "assets/phase-banner-shooting-08.png", "assets/phase-banner-shooting-09.png"],
+  commence: ["assets/phase-banner-commence-01.png", "assets/phase-banner-commence-02.png", "assets/phase-banner-commence-03.png", "assets/phase-banner-commence-04.png", "assets/phase-banner-commence-05.png", "assets/phase-banner-commence-06.png", "assets/phase-banner-commence-07.png", "assets/phase-banner-commence-08.png", "assets/phase-banner-commence-09.png"],
+  victory: ["assets/phase-banner-victory-01.png", "assets/phase-banner-victory-02.png", "assets/phase-banner-victory-03.png", "assets/phase-banner-victory-04.png", "assets/phase-banner-victory-05.png", "assets/phase-banner-victory-06.png", "assets/phase-banner-victory-07.png", "assets/phase-banner-victory-08.png", "assets/phase-banner-victory-09.png"],
   special: ["assets/phase-banner-special-01.png", "assets/phase-banner-special-02.png", "assets/phase-banner-special-03.png", "assets/phase-banner-special-04.png", "assets/phase-banner-special-05.png", "assets/phase-banner-special-06.png", "assets/phase-banner-special-07.png", "assets/phase-banner-special-08.png", "assets/phase-banner-special-09.png"]
 };
 const PHASE_BANNER_FRAME_MS = 85;
+const PHASE_BANNER_MS = 2400;   // the whole fly-in, hold and fly-out: keep in step with the 2.4s animations in style.css
 Object.values(PHASE_BANNER_FRAMES).forEach(list=>list.forEach(src=>{ const im = new Image(); im.src = src; }));   // preload so the first one doesn't flicker
-let phaseBannerTimer = null;
-function playPhaseBanner(phase){
+let phaseBannerTimer = null, phaseBannerSeq = 0;
+// then: called when this banner has finished, unless another banner has started in the meantime.
+function playPhaseBanner(phase, then){
   const frames = PHASE_BANNER_FRAMES[phase], el = document.getElementById('phaseFlash');
-  if(!frames || !el || state.gameOver) return;
+  if(!frames || !el || (state.gameOver && phase!=='victory')) return;
+  const seq = ++phaseBannerSeq;
+  if(then) setTimeout(()=>{ if(seq===phaseBannerSeq) then(); }, PHASE_BANNER_MS);
   const img = el.querySelector('img'), stripe = document.getElementById('phaseStripe');
   clearInterval(phaseBannerTimer);
   let i = 0;
@@ -4732,7 +4740,10 @@ function endGame(winner, reason){
   clearCritPopups();
   document.getElementById('shipActionBox').classList.remove('show');
   document.getElementById('deployTray').classList.remove('show');   // a multiplayer opponent can leave during deployment
-  showSummary(winner, reason);
+  if(winner==='player'){   // the Victory banner first, then the summary
+    playPhaseBanner('victory');
+    setTimeout(()=>showSummary(winner, reason), PHASE_BANNER_MS);
+  } else showSummary(winner, reason);
 }
 
 /* ============================== END-OF-BATTLE SUMMARY ============================== */
