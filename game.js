@@ -988,6 +988,23 @@ function logContestedCrossing(loserSide){
 }
 
 // Main menu: Skirmish is the current game (one battle against the AI); the other modes are placeholders for now.
+/* ============================== OPENING SCREEN ============================== */
+// The title art shows first; any key, click or tap fades it away to the game-mode menu underneath.
+(function(){
+  const splash = document.getElementById('splashScreen');
+  if(!splash) return;
+  const go = (e)=>{
+    if(splash.classList.contains('leaving')) return;
+    if(e && e.type==='keydown') e.preventDefault();   // the key only dismisses the title, nothing underneath
+    splash.classList.add('leaving');
+    window.removeEventListener('keydown', go, true);
+    setTimeout(()=>{ splash.style.display = 'none'; }, 450);
+  };
+  window.addEventListener('keydown', go, true);
+  splash.addEventListener('click', go);   // click, not pointerdown: the release must not land on a menu button underneath
+  splash.focus();
+})();
+
 function showMainMenu(){
   document.getElementById('mainMenuScreen').style.display='flex';
   document.getElementById('multiplayerScreen').style.display='none';
