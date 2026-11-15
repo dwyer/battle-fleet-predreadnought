@@ -50,8 +50,8 @@ map and the wheel zooms. The game saves nothing between sessions.
 - `style.css` - all styling.
 - `game.js` - all game logic.
 - `assets/` - images and music, referenced from the code as `assets/<name>`.
-- `docs/Battle_Fleet_Rulebook_v1.3.0.pdf` - the Captain's Rulebook (24 pages), written for build v1.3.0. It does not yet cover
-  v1.3.1-v1.12.0 changes (named AI and player ships, the All Ahead Full display fix, King of the Hill capture zones, multiplayer, the Focus Target order, ships blocking line of sight, phase, Battle Commence, Victory and Defeat banners, the opening title screen, the new name).
+- `docs/Cold_Steel_Squadron_Rulebook_v1.13.0.pdf` - the Captain's Rulebook (31 pages), up to date with build v1.13.0.
+  Its source (text and figures) is `tools/rulebook/`; rebuild it with `python3 tools/rulebook/make_rulebook.py`.
 - `server/` - the multiplayer relay server, with a Docker Compose setup for running it at home (see `server/README.md`).
 - `tools/build_single_file.py` - bundles everything above into one self-contained HTML file
   (`python3 tools/build_single_file.py` writes `dist/cold-steel-squadron.html`).
