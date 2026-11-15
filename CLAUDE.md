@@ -1,4 +1,6 @@
-# Battle Fleet: Pre-Dreadnought
+# Cold Steel Squadron
+
+(Formerly "Battle Fleet: Pre-Dreadnought": the repository, GitHub Pages address and multiplayer relay host keep the old name.)
 
 A single-player, browser-based naval wargame in plain HTML/CSS/JavaScript. No frameworks, no npm, no build step for
 development: `index.html` loads `style.css` and `game.js`, which load images and music from `assets/`.

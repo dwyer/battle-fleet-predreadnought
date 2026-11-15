@@ -1,4 +1,4 @@
-# Battle Fleet multiplayer relay, served through an existing Traefik (which provides HTTPS: secure pages like
+# Cold Steel Squadron multiplayer relay, served through an existing Traefik (which provides HTTPS: secure pages like
 # GitHub Pages can only connect to a secure wss:// address). See README.md in this folder.
 #   docker compose up -d
 # Traefik must be on the Docker network named by TRAEFIK_NETWORK and have a certificate resolver called "le".

@@ -1,7 +1,7 @@
 """Bundle index.html + style.css + game.js + assets/ into one self-contained HTML file.
 
 Usage: python3 tools/build_single_file.py [output.html]
-Default output: dist/battle-fleet-predreadnought.html
+Default output: dist/cold-steel-squadron.html
 """
 import base64, os, re, sys
 
@@ -26,7 +26,7 @@ html = html.replace('<link rel="stylesheet" href="style.css">', '<style>\n' + re
 html = html.replace('<script src="game.js"></script>', '<script>\n' + read('game.js') + '</script>', 1)
 html = ASSET_REF.sub(data_uri, html)
 
-out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'dist', 'battle-fleet-predreadnought.html')
+out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'dist', 'cold-steel-squadron.html')
 os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
 with open(out, 'w', encoding='utf-8') as f:
     f.write(html)

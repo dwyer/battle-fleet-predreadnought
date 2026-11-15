@@ -1,5 +1,5 @@
 # Publishes the game to GitHub Pages (gh-pages branch).
-#   push to main  -> site root, plus the single-file build at /battle-fleet-predreadnought.html
+#   push to main  -> site root, plus the single-file build at /cold-steel-squadron.html (and the old name, for old links)
 #   pull request  -> playable preview at /pr-preview/pr-<number>/, removed when the PR closes
 name: Pages
 
@@ -29,7 +29,8 @@ jobs:
           node --check game.js
           mkdir _site
           cp -r index.html style.css game.js assets docs _site/
-          python3 tools/build_single_file.py _site/battle-fleet-predreadnought.html
+          python3 tools/build_single_file.py _site/cold-steel-squadron.html
+          cp _site/cold-steel-squadron.html _site/battle-fleet-predreadnought.html
           touch _site/.nojekyll
 
       - name: Deploy main site

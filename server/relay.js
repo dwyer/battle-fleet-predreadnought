@@ -1,4 +1,4 @@
-// Battle Fleet: Pre-Dreadnought — multiplayer relay server.
+// Cold Steel Squadron — multiplayer relay server.
 //
 // It knows nothing about the game's rules. One player HOSTS and gets a short room code; a second player JOINS with
 // that code; from then on every game message one of them sends is passed straight to the other. The two copies of
@@ -75,7 +75,7 @@ const server = http.createServer((req, res) => {
     return;
   }
   res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8'});
-  res.end('Battle Fleet multiplayer relay is running. Point the game\'s Multiplayer screen at this address.\n');
+  res.end('Cold Steel Squadron multiplayer relay is running. Point the game\'s Multiplayer screen at this address.\n');
 });
 
 const wss = new WebSocketServer({
@@ -154,7 +154,7 @@ const sweeper = setInterval(() => {
 wss.on('close', () => clearInterval(sweeper));
 
 server.listen(PORT, () => {
-  log(`Battle Fleet relay listening on port ${PORT}` + (ALLOWED_ORIGINS.length ? ` (origins: ${ALLOWED_ORIGINS.join(', ')})` : ' (any origin)'));
+  log(`Cold Steel Squadron relay listening on port ${PORT}` + (ALLOWED_ORIGINS.length ? ` (origins: ${ALLOWED_ORIGINS.join(', ')})` : ' (any origin)'));
 });
 
 function shutdown(){
