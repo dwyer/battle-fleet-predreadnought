@@ -151,6 +151,11 @@
     background-image:linear-gradient(rgba(5,10,18,.6),rgba(5,10,18,.6)),var(--ocean-bg);
     background-size:cover;background-position:center;z-index:40;display:flex;
     flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;}
+  /* Developer logo: on black above everything, fades in for 1s and out for 1s, then the title screen shows. */
+  #devScreen{position:fixed;inset:0;z-index:80;background:#000;display:flex;align-items:center;justify-content:center;}
+  #devScreen img{width:min(52vw,70vh,620px);height:auto;opacity:0;}
+  #devScreen img.play{animation:devFade 2s linear forwards;}
+  @keyframes devFade{0%{opacity:0;}50%{opacity:1;}100%{opacity:0;}}
   /* Opening screen: the title art over everything until the player presses a key or clicks. */
   #splashScreen{position:fixed;inset:0;z-index:70;cursor:pointer;background:#0b3d7a url("assets/title-screen.jpg") center 30%/cover no-repeat;
     display:flex;align-items:flex-end;justify-content:center;padding-bottom:4vh;box-sizing:border-box;transition:opacity .45s ease;outline:none;}

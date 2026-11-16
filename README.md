@@ -1,4 +1,4 @@
-# Cold Steel Squadron  (build v1.13.0)
+# Cold Steel Squadron  (build v1.14.0)
 
 (Formerly "Battle Fleet: Pre-Dreadnought"; the repository keeps its old name.)
 
