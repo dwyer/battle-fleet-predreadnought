@@ -989,10 +989,18 @@ function logContestedCrossing(loserSide){
 
 // Main menu: Skirmish is the current game (one battle against the AI); the other modes are placeholders for now.
 /* ============================== OPENING SCREEN ============================== */
-// The title art shows first; any key, click or tap fades it away to the game-mode menu underneath.
+// The developer logo plays first (2 s, see #devScreen in style.css), then the title art shows; any key, click or tap
+// fades the title away to the game-mode menu underneath. Keys and clicks during the logo do nothing.
 (function(){
   const splash = document.getElementById('splashScreen');
   if(!splash) return;
+  const dev = document.getElementById('devScreen');
+  const startTitle = ()=>{
+    if(dev) dev.style.display = 'none';
+    window.addEventListener('keydown', go, true);
+    splash.addEventListener('click', go);   // click, not pointerdown: the release must not land on a menu button underneath
+    splash.focus();
+  };
   const go = (e)=>{
     if(splash.classList.contains('leaving')) return;
     if(e && e.type==='keydown') e.preventDefault();   // the key only dismisses the title, nothing underneath
@@ -1000,9 +1008,14 @@ function logContestedCrossing(loserSide){
     window.removeEventListener('keydown', go, true);
     setTimeout(()=>{ splash.style.display = 'none'; }, 450);
   };
-  window.addEventListener('keydown', go, true);
-  splash.addEventListener('click', go);   // click, not pointerdown: the release must not land on a menu button underneath
-  splash.focus();
+  if(!dev){ startTitle(); return; }
+  // The fade starts once the logo has loaded, and the title appears the moment it ends (with a backstop in case it never does).
+  const img = dev.querySelector('img');
+  let done = false;
+  const finish = ()=>{ if(!done){ done = true; startTitle(); } };
+  const play = ()=>{ img.classList.add('play'); setTimeout(finish, 2600); };
+  img.addEventListener('animationend', finish);
+  if(img.complete) play(); else { img.addEventListener('load', play); img.addEventListener('error', finish); }
 })();
 
 function showMainMenu(){
