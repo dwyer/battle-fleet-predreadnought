@@ -33,7 +33,7 @@ sides' intent.
 - `game.js` - all logic (~6,000 lines, one global script). Sprite/sound constants (`SPRITE_*`, `SOUND_*`) near the top
   hold asset paths.
 - `assets/` - PNG/JPG images and MP3 audio. Lowercase-hyphenated names describing the image.
-- `docs/` - the Captain's Rulebook PDF (current as of v1.15.0). Its source is `tools/rulebook/make_rulebook.py` plus
+- `docs/` - the Captain's Rulebook PDF (current as of v1.15.1). Its source is `tools/rulebook/make_rulebook.py` plus
   `tools/rulebook/figures/`; when rules change, update the text there, bump its BUILD, and rebuild the PDF.
 - `tools/build_single_file.py` - produces the one-file distributable; CI runs it, you rarely need to.
 - `server/` - the multiplayer relay (Node + `ws`, Docker Compose with Traefik labels for HTTPS). It is not part of the published

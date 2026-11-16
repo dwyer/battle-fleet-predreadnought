@@ -1,4 +1,4 @@
-# Cold Steel Squadron  (build v1.15.0)
+# Cold Steel Squadron  (build v1.15.1)
 
 (Formerly "Battle Fleet: Pre-Dreadnought"; the repository keeps its old name.)
 
@@ -8,7 +8,7 @@ special orders. It runs entirely in the browser: no install, server or internet 
 
 ## Game types (Main Menu > Skirmish)
 - **Annihilation** - sink the whole enemy fleet (1,200" x 800" board).
-- **Quick Battle** - a small, fast Annihilation: up to 3 ships a side on a 400" x 400" board with at most 2 islands, and
+- **Quick Battle** - a small, fast Annihilation: up to 3 ships a side on a 500" x 500" board with at most 2 islands, and
   every ship starts the battle already at its absolute top speed.
 - **Breakthrough** - attackers run VIP ships to an Exit Zone while defenders try to stop them (800" x 800").
 - **King of the Hill** - fight over capture zones (100" circles, up to two on the board at once). Before the battle choose
@@ -52,7 +52,7 @@ map and the wheel zooms. The game saves nothing between sessions.
 - `style.css` - all styling.
 - `game.js` - all game logic.
 - `assets/` - images and music, referenced from the code as `assets/<name>`.
-- `docs/Cold_Steel_Squadron_Rulebook_v1.15.0.pdf` - the Captain's Rulebook (31 pages), up to date with build v1.15.0.
+- `docs/Cold_Steel_Squadron_Rulebook_v1.15.1.pdf` - the Captain's Rulebook (31 pages), up to date with build v1.15.1.
   Its source (text and figures) is `tools/rulebook/`; rebuild it with `python3 tools/rulebook/make_rulebook.py`.
 - `server/` - the multiplayer relay server, with a Docker Compose setup for running it at home (see `server/README.md`).
 - `tools/build_single_file.py` - bundles everything above into one self-contained HTML file

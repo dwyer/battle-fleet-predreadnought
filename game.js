@@ -456,9 +456,9 @@ function nextId(){ return (mp.on ? (mp.role==='host' ? 'H' : 'G') : 'S')+(shipCo
 const fleetChoice = { player:{Frigate:0, Destroyer:0, 'Light Cruiser':0, 'Medium Cruiser':0, 'Heavy Cruiser':0, Battleship:0}, ai:{Frigate:0, Destroyer:0, 'Light Cruiser':0, 'Medium Cruiser':0, 'Heavy Cruiser':0, Battleship:0} };
 
 /* ============================== QUICK BATTLE ============================== */
-// Annihilation in miniature: at most 3 ships a side, a 400" x 400" sea with at most 2 islands, and every ship starts the
+// Annihilation in miniature: at most 3 ships a side, a 500" x 500" sea with at most 2 islands, and every ship starts the
 // battle already at its absolute top speed (as if it had been steaming flat out for several rounds).
-const QUICK_FLEET_CAP = 3, QUICK_MAX_ISLANDS = 2, QUICK_BOARD = 400;
+const QUICK_FLEET_CAP = 3, QUICK_MAX_ISLANDS = 2, QUICK_BOARD = 500;
 function quickBattle(){ return state.skirmishType==='quick'; }
 function fleetTotal(){ return SHIP_ORDER.reduce((n,t)=>n+fleetChoice.player[t],0); }
 function fleetCap(){ return quickBattle() ? QUICK_FLEET_CAP : Infinity; }

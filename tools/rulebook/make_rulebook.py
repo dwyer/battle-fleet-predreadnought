@@ -13,7 +13,7 @@ from reportlab.platypus import (BaseDocTemplate, PageTemplate, Frame, Paragraph,
 from reportlab.platypus.tableofcontents import TableOfContents
 from PIL import Image as PILImage
 
-BUILD = 'v1.15.0'
+BUILD = 'v1.15.1'
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 FIG = os.path.join(HERE, 'figures') + '/'
@@ -292,11 +292,11 @@ story.append(P("If you go Back to the fleet picker and leave the numbers unchang
     "and the fleet is rebuilt.", small))
 story.append(note('Quick Battle', ["A Quick Battle is set up and fought exactly like Annihilation, with four differences:",
     "\u2022 Each side has <b>at most 3 ships</b> in all (the fleet picker stops at 3).",
-    "\u2022 The sea is only <b>400\" by 400\"</b>, and it has <b>at most 2 islands</b>.",
+    "\u2022 The sea is only <b>500\" by 500\"</b>, and it has <b>at most 2 islands</b>.",
     "\u2022 Every ship starts the battle <b>already at its absolute top speed</b>, as if it had been steaming flat out for several rounds: "
     "Frigate 90\", Destroyer 75\", cruisers 62.5\", Battleship 60\". Momentum applies from the first move, so each ship must cover at least half "
     "of that (a Frigate at least 45\") and must hold its heading for 45% of it before turning.",
-    "\u2022 The fleets start only about 320\" apart and torpedoes reach across the whole sea, so the shooting starts at once. Mind the edges: a "
+    "\u2022 The fleets start only about 420\" apart and torpedoes reach across the whole sea, so the shooting starts at once. Mind the edges: a "
     "ship that sails off the board is still lost with all hands, and at these speeds it takes several moves to turn a ship round."]))
 story.append(note('Ship names', "When the battle starts, every ship you left unnamed is given a name from the game's list of ship names "
     "(Tempest, Warspite, Hotspur and so on), and every enemy ship is named the same way. No name is used twice in a battle, and a name "
@@ -807,7 +807,7 @@ story.append(P("Online, each of those end-of-phase buttons is Orders Completed, 
 story.append(CondPageBreak(150)); story.append(H2('Key numbers'))
 story.append(table([['Item','Value'],
     ['Board','Annihilation 1,200" x 800"; Breakthrough and King of the Hill 800" x 800"; 1 to 5 islands (at most 5% of the area)'],
-    ['Quick Battle','Up to 3 ships a side; 400" x 400"; 1 or 2 islands; every ship starts at its absolute top speed'],
+    ['Quick Battle','Up to 3 ships a side; 500" x 500"; 1 or 2 islands; every ship starts at its absolute top speed'],
     ['Top speed cap','Base movement x multiplier: Frigate 90", Destroyer 75", Light Cruiser 62.5", Medium / Heavy Cruiser 62.5", Battleship 60"'],
     ['Minimum move / MSMD','50% of last move / 45% of last move (first move: class minimum turn distance)'],
     ['Broadside arc / turret cone','90° each side / 25° wide, traversing 90° (Frigate) or 60° (others) per turn'],
