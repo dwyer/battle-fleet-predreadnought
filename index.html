@@ -49,7 +49,7 @@
         <h3>Host a game</h3>
         <p class="smallDim">You choose the battle and the ships, then send your opponent the code you're given.</p>
         <div class="mpSettings">
-          <label>Battle <select id="mpTypePick"><option value="annihilation">Annihilation</option><option value="breakthrough">Breakthrough</option><option value="koth">King of the Hill</option></select></label>
+          <label>Battle <select id="mpTypePick"><option value="annihilation">Annihilation</option><option value="quick">Quick Battle</option><option value="breakthrough">Breakthrough</option><option value="koth">King of the Hill</option></select></label>
           <label>Time per phase <select id="mpTimePick"><option value="2">2 minutes</option><option value="3" selected>3 minutes</option><option value="4">4 minutes</option></select></label>
           <label class="mpKothOnly">Capture zones <select id="mpZonePick"></select></label>
           <label class="mpKothOnly">Points per zone <select id="mpPointPick"></select></label>
@@ -91,6 +91,10 @@
       <span class="mcTag">Classic</span><span class="mcName">Annihilation</span>
       <span class="mcDesc">Build your fleet, choose your heading and sink the enemy fleet.</span>
     </button>
+    <button class="modeCard" id="modeQuickBtn">
+      <span class="mcTag">New</span><span class="mcName">Quick Battle</span>
+      <span class="mcDesc">A fast Annihilation: up to 3 ships a side on a small 400" sea, everyone already at full speed.</span>
+    </button>
     <button class="modeCard" id="modeBreakthroughBtn">
       <span class="mcTag">New</span><span class="mcName">Breakthrough</span>
       <span class="mcDesc">Attackers run their VIP ships for the Exit Zone while the defenders try to stop them. You place every ship by hand.</span>
@@ -109,6 +113,7 @@
   <div class="setupBox" id="fleetSetupBox">
     <h3 style="color:var(--gold);margin-top:0;">Build Your Fleet</h3>
     <div id="mpFleetNote" class="smallDim" style="display:none;margin:-4px 0 10px;line-height:1.45;">Multiplayer: your opponent gets the same ships. You each fit out, arrange and choose a heading for your own fleet.</div>
+    <div id="quickFleetNote" class="smallDim" style="display:none;margin:-4px 0 10px;">Quick Battle: up to 3 ships in all.</div>
     <div class="fleetPicker" id="fleetPicker"></div>
     <div id="btSetupBox" style="display:none;">
       <h3>Breakthrough Options</h3>

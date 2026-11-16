@@ -13,7 +13,7 @@ from reportlab.platypus import (BaseDocTemplate, PageTemplate, Frame, Paragraph,
 from reportlab.platypus.tableofcontents import TableOfContents
 from PIL import Image as PILImage
 
-BUILD = 'v1.13.0'
+BUILD = 'v1.15.0'
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 FIG = os.path.join(HERE, 'figures') + '/'
@@ -177,7 +177,7 @@ story.append(note('How to use this book', [
     "Distances are in inches (\"): the Annihilation board is 1,200\" by 800\"; Breakthrough and King of the Hill are fought on a smaller "
     "800\" by 800\" board. Angles are in degrees. A ship's heading is a compass bearing, with 0° straight up the screen (north) and "
     "90° to the right (east).",
-    "<b>New since the last edition (build v1.3.0):</b> the game's new name and title screen; automatic ship names; capture zones in "
+    "<b>New since the last edition (build v1.3.0):</b> the Quick Battle mode; the game's new name and title screen; automatic ship names; capture zones in "
     "King of the Hill; online Multiplayer for every battle type, with a phase clock and Orders Completed; the Focus Target special "
     "order; ships blocking line of sight; and the animated phase, Battle Commence, Victory and Defeat banners."]))
 story.append(PageBreak())
@@ -270,10 +270,12 @@ story += bullets("A shot from a gun mount is one roll against the target. Each f
 story.append(PageBreak())
 story.append(CondPageBreak(200)); story.append(H1('3. Setting Up a Battle'))
 story.append(img_row([(FIG+'new-title.jpg', 'The title screen: press any key or click.'), (FIG+'new-menu.jpg', 'The Main Menu.')], 150))
-story.append(P("The game opens on the <b>Cold Steel Squadron title screen</b>. Press any key, or click or tap anywhere, to go to the "
+story.append(P("The game opens with the KawaiiKyuri developer logo, which fades in and out over two seconds, and then the "
+    "<b>Cold Steel Squadron title screen</b>. Press any key, or click or tap anywhere, to go to the "
     "<b>Main Menu</b>, where you pick a game type. <b>Skirmish</b> is a battle against the computer and <b>Multiplayer</b> is a battle against "
     "another player online (Section 13); <b>Campaign</b> and <b>Missions</b> are shown greyed out as \"coming soon\". Choosing Skirmish asks "
-    "which battle you want: <b>Annihilation</b> (a straight fight to the last ship, set up as described below), <b>Breakthrough</b> (attackers "
+    "which battle you want: <b>Annihilation</b> (a straight fight to the last ship, set up as described below), <b>Quick Battle</b> (a "
+    "small, fast Annihilation; see the box below), <b>Breakthrough</b> (attackers "
     "run VIP ships to an exit while defenders try to stop them; see Section 11) or <b>King of the Hill</b> (two fleets fight over a series of "
     "capture zones; see Section 12). The Back to Menu button on the fleet builder returns you to the menu."))
 story.append(P("An Annihilation battle is set up in four short screens before the first round begins. Each of the last three has a Back "
@@ -288,6 +290,14 @@ story += steps("<b>Build your fleet.</b> The six classes sit side by side in a r
     "<b>Choose your heading.</b> Pick North, South, East or West. Both fleets start on opposite sides of the board facing each other along that line.")
 story.append(P("If you go Back to the fleet picker and leave the numbers unchanged, your fitment and formation are kept; change the numbers "
     "and the fleet is rebuilt.", small))
+story.append(note('Quick Battle', ["A Quick Battle is set up and fought exactly like Annihilation, with four differences:",
+    "\u2022 Each side has <b>at most 3 ships</b> in all (the fleet picker stops at 3).",
+    "\u2022 The sea is only <b>400\" by 400\"</b>, and it has <b>at most 2 islands</b>.",
+    "\u2022 Every ship starts the battle <b>already at its absolute top speed</b>, as if it had been steaming flat out for several rounds: "
+    "Frigate 90\", Destroyer 75\", cruisers 62.5\", Battleship 60\". Momentum applies from the first move, so each ship must cover at least half "
+    "of that (a Frigate at least 45\") and must hold its heading for 45% of it before turning.",
+    "\u2022 The fleets start only about 320\" apart and torpedoes reach across the whole sea, so the shooting starts at once. Mind the edges: a "
+    "ship that sails off the board is still lost with all hands, and at these speeds it takes several moves to turn a ship round."]))
 story.append(note('Ship names', "When the battle starts, every ship you left unnamed is given a name from the game's list of ship names "
     "(Tempest, Warspite, Hotspur and so on), and every enemy ship is named the same way. No name is used twice in a battle, and a name "
     "you typed yourself always wins. With more than 30 ships in a battle the list runs out, and the extra ships keep a plain label such "
@@ -745,19 +755,19 @@ story.append(note('Reading the top bar', "During a King of the Hill battle the t
 story.append(PageBreak())
 story.append(CondPageBreak(200)); story.append(H1('13. Multiplayer'))
 story.append(P("Multiplayer is a battle against another player over the internet. <b>Every Skirmish battle can be played online</b>: Annihilation, "
-    "Breakthrough and King of the Hill. Each player sees their own fleet as \"yours\" and the other as the enemy. Both players give their orders at the "
+    "Quick Battle, Breakthrough and King of the Hill. Each player sees their own fleet as \"yours\" and the other as the enemy. Both players give their orders at the "
     "same time without seeing each other's, and when both are done the orders are carried out together, with <b>the same dice results on both screens</b>. "
     "Single-player games need no internet connection; Multiplayer does."))
 story.append(img(FIG+'new-mp-lobby.jpg', 290, 'The Multiplayer screen: the host\'s choices on the left, joining on the right.'))
 story.append(CondPageBreak(150)); story.append(H2('Hosting and joining'))
 story += steps("Both players choose <b>Multiplayer</b> on the Main Menu. The <b>server address</b> is filled in for you.",
-    "One player is the <b>host</b>. Before pressing <b>Host Game</b> they choose the <b>Battle</b> (Annihilation, Breakthrough or King of the Hill), the "
+    "One player is the <b>host</b>. Before pressing <b>Host Game</b> they choose the <b>Battle</b> (Annihilation, Quick Battle, Breakthrough or King of the Hill), the "
     "<b>Time per phase</b> (2, 3 or 4 minutes) and, for King of the Hill, the <b>capture zones</b> and <b>points per zone</b>. They are given a "
     "<b>4-letter code</b> to send to the other player.",
     "The other player types the code under <b>Join a game</b> and presses <b>Join</b>. While they wait, they are told what the host chose.")
 story.append(CondPageBreak(150)); story.append(H2('Setting up an online battle'))
 story += bullets("The <b>host picks the ships</b>, and both fleets get the same ones. Each player then fits out and names their own fleet.",
-    "<b>Annihilation:</b> each player arranges their Formation and chooses a heading. Choosing the same heading gives a contested crossing, as in Skirmish.",
+    "<b>Annihilation and Quick Battle:</b> each player arranges their Formation and chooses a heading. Choosing the same heading gives a contested crossing, as in Skirmish.",
     "<b>Breakthrough:</b> the host picks their own role (Attacker or Defender) and the number of VIPs in the Breakthrough Options box on the fleet "
     "screen; the other player takes the other role. The attacker ticks the VIPs in the briefing, and the defender sees them, marked with stars and "
     "listed in the log, when deployment begins.",
@@ -797,6 +807,7 @@ story.append(P("Online, each of those end-of-phase buttons is Orders Completed, 
 story.append(CondPageBreak(150)); story.append(H2('Key numbers'))
 story.append(table([['Item','Value'],
     ['Board','Annihilation 1,200" x 800"; Breakthrough and King of the Hill 800" x 800"; 1 to 5 islands (at most 5% of the area)'],
+    ['Quick Battle','Up to 3 ships a side; 400" x 400"; 1 or 2 islands; every ship starts at its absolute top speed'],
     ['Top speed cap','Base movement x multiplier: Frigate 90", Destroyer 75", Light Cruiser 62.5", Medium / Heavy Cruiser 62.5", Battleship 60"'],
     ['Minimum move / MSMD','50% of last move / 45% of last move (first move: class minimum turn distance)'],
     ['Broadside arc / turret cone','90° each side / 25° wide, traversing 90° (Frigate) or 60° (others) per turn'],

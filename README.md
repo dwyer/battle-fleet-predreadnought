@@ -1,4 +1,4 @@
-# Cold Steel Squadron  (build v1.14.0)
+# Cold Steel Squadron  (build v1.15.0)
 
 (Formerly "Battle Fleet: Pre-Dreadnought"; the repository keeps its old name.)
 
@@ -8,6 +8,8 @@ special orders. It runs entirely in the browser: no install, server or internet 
 
 ## Game types (Main Menu > Skirmish)
 - **Annihilation** - sink the whole enemy fleet (1,200" x 800" board).
+- **Quick Battle** - a small, fast Annihilation: up to 3 ships a side on a 400" x 400" board with at most 2 islands, and
+  every ship starts the battle already at its absolute top speed.
 - **Breakthrough** - attackers run VIP ships to an Exit Zone while defenders try to stop them (800" x 800").
 - **King of the Hill** - fight over capture zones (100" circles, up to two on the board at once). Before the battle choose
   how many zones (1-5) and how many points each holds (5-30). Each round, the side that outweighs the other in a zone takes
@@ -17,7 +19,7 @@ special orders. It runs entirely in the browser: no install, server or internet 
 ## Multiplayer (Main Menu > Multiplayer)
 A battle between two players over the internet, through a relay server (see `server/`).
 - The relay address is filled in for you (`wss://battle-fleet-relay.dwyer.dev`). The host chooses the battle
-  (**Annihilation**, **Breakthrough**, or **King of the Hill** with its number of capture zones and points per zone) and the **time per
+  (**Annihilation**, **Quick Battle**, **Breakthrough**, or **King of the Hill** with its number of capture zones and points per zone) and the **time per
   phase** (2, 3 or 4 minutes), clicks **Host Game** and sends the other player the 4-letter code; they type it in and
   click **Join**.
 - The host picks the ships, and both fleets get the same ones. Each player fits out their own fleet. In Annihilation
@@ -50,7 +52,7 @@ map and the wheel zooms. The game saves nothing between sessions.
 - `style.css` - all styling.
 - `game.js` - all game logic.
 - `assets/` - images and music, referenced from the code as `assets/<name>`.
-- `docs/Cold_Steel_Squadron_Rulebook_v1.13.0.pdf` - the Captain's Rulebook (31 pages), up to date with build v1.13.0.
+- `docs/Cold_Steel_Squadron_Rulebook_v1.15.0.pdf` - the Captain's Rulebook (31 pages), up to date with build v1.15.0.
   Its source (text and figures) is `tools/rulebook/`; rebuild it with `python3 tools/rulebook/make_rulebook.py`.
 - `server/` - the multiplayer relay server, with a Docker Compose setup for running it at home (see `server/README.md`).
 - `tools/build_single_file.py` - bundles everything above into one self-contained HTML file
