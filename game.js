@@ -402,7 +402,7 @@ let state = {
   mines: [], // {x,y,side}
   torpedoes: [], // in flight: launched as a Special Attack order, resolved at the end of the next Movement phase
   gameOver:false,
-  skirmishType:'annihilation', // 'annihilation' | 'breakthrough' | 'koth'
+  skirmishType:'annihilation', // 'annihilation' | 'quick' | 'breakthrough' | 'koth'
   bt:null,        // Breakthrough zones / roles (see BREAKTHROUGH MODE)
   btEndNote:null,
   // transient UI state for movement planning
@@ -455,6 +455,23 @@ function nextId(){ return (mp.on ? (mp.role==='host' ? 'H' : 'G') : 'S')+(shipCo
 /* ============================== FLEET SETUP UI ============================== */
 const fleetChoice = { player:{Frigate:0, Destroyer:0, 'Light Cruiser':0, 'Medium Cruiser':0, 'Heavy Cruiser':0, Battleship:0}, ai:{Frigate:0, Destroyer:0, 'Light Cruiser':0, 'Medium Cruiser':0, 'Heavy Cruiser':0, Battleship:0} };
 
+/* ============================== QUICK BATTLE ============================== */
+// Annihilation in miniature: at most 3 ships a side, a 400" x 400" sea with at most 2 islands, and every ship starts the
+// battle already at its absolute top speed (as if it had been steaming flat out for several rounds).
+const QUICK_FLEET_CAP = 3, QUICK_MAX_ISLANDS = 2, QUICK_BOARD = 400;
+function quickBattle(){ return state.skirmishType==='quick'; }
+function fleetTotal(){ return SHIP_ORDER.reduce((n,t)=>n+fleetChoice.player[t],0); }
+function fleetCap(){ return quickBattle() ? QUICK_FLEET_CAP : Infinity; }
+// Entering a Quick Battle with a bigger fleet left over from another game starts the picker from empty.
+function quickSyncFleetPicker(){
+  if(quickBattle() && fleetTotal() > QUICK_FLEET_CAP){ SHIP_ORDER.forEach(t=>{ fleetChoice.player[t] = 0; }); renderFleetPicker(); }
+  const note = document.getElementById('quickFleetNote'); if(note) note.style.display = quickBattle() ? '' : 'none';
+}
+function quickStartAtTopSpeed(){
+  if(!quickBattle()) return;
+  [...state.fleets.player, ...state.fleets.ai].forEach(s=>{ s.movement = s.baseMovement*s.topSpeedMult; s.lastDistance = s.movement; });
+}
+
 function renderFleetPicker(){
   const el = document.getElementById('fleetPicker');
   el.innerHTML = '';
@@ -477,6 +494,7 @@ function renderFleetPicker(){
   el.querySelectorAll('button').forEach(b=>{
     b.onclick = ()=>{
       const t=b.dataset.t, d=parseInt(b.dataset.d);
+      if(d>0 && fleetTotal() >= fleetCap()) return;   // Quick Battle: 3 ships at most
       fleetChoice.player[t] = Math.max(0, Math.min(5, fleetChoice.player[t]+d));
       document.getElementById('cnt_'+t.replace(/ /g,'_')).textContent = fleetChoice.player[t];
       btSyncSetupBox();
@@ -873,7 +891,7 @@ function generateBlobPolygon(cx, cy, baseR, aspect=1){
 }
 function generateIslands(opts){
   const capArea = 0.05 * BOARD_W * BOARD_H; // islands never cover more than 5% of the board
-  const n = 1 + Math.floor(Math.random()*5); // 1 to 5 islands
+  const n = 1 + Math.floor(Math.random()*(quickBattle() ? QUICK_MAX_ISLANDS : 5)); // 1 to 5 islands (1 to 2 in a Quick Battle)
   const islands = [];
   let usedArea = 0;
   const allShipsNow = (opts && opts.ignoreShips) ? [] : [...state.fleets.player, ...state.fleets.ai];
@@ -1042,6 +1060,15 @@ document.getElementById('modeAnnihilationBtn').onclick = ()=>{
   setBoardSize(1200,800);
   document.getElementById('skirmishTypeScreen').style.display='none';
   btSyncSetupBox();
+  quickSyncFleetPicker();
+  startMode('skirmish');
+};
+document.getElementById('modeQuickBtn').onclick = ()=>{
+  state.skirmishType = 'quick';
+  setBoardSize(QUICK_BOARD, QUICK_BOARD);
+  document.getElementById('skirmishTypeScreen').style.display='none';
+  btSyncSetupBox();
+  quickSyncFleetPicker();
   startMode('skirmish');
 };
 document.getElementById('modeKothBtn').onclick = ()=>{
@@ -1049,6 +1076,7 @@ document.getElementById('modeKothBtn').onclick = ()=>{
   setBoardSize(800,800);
   document.getElementById('skirmishTypeScreen').style.display='none';
   btSyncSetupBox();
+  quickSyncFleetPicker();
   startMode('skirmish');
 };
 document.getElementById('modeBreakthroughBtn').onclick = ()=>{
@@ -1056,6 +1084,7 @@ document.getElementById('modeBreakthroughBtn').onclick = ()=>{
   setBoardSize(800,800);
   document.getElementById('skirmishTypeScreen').style.display='none';
   btSyncSetupBox();
+  quickSyncFleetPicker();
   startMode('skirmish');
 };
 function btSyncSetupBox(){
@@ -1094,11 +1123,13 @@ function startGame(preset){
     state.sunDeg = preset.sunDeg;
     state.islands = preset.islands;
     mpApplyPlacement(preset.place);
+    quickStartAtTopSpeed();
     if(preset.contested) logContestedCrossing(preset.contested==='host' ? 'ai' : 'player');
   } else {
     state.sunDeg = Math.floor(Math.random()*360);
     if(!mp.on){ assignPlayerNames(); assignAiNames(); }   // (the player may have named a ship after one of the AI's)
     placeFleets();
+    quickStartAtTopSpeed();
     allShips().forEach(s=>{ s.turretSyncHeading = s.heading; });
     state.islands = generateIslands();
   }
@@ -6492,7 +6523,7 @@ function wireUpPanel(s){
 //    so both copies roll the same numbers and show the same hits, misses and critical damage.
 // The host chooses the battle (any Skirmish type) and how long each phase may last. Each player presses
 // Orders Completed when done; when the clock runs out, whatever orders are given so far are sent as they stand.
-const MP_PROTOCOL = 4;          // bump whenever these messages change, so two different builds refuse to play each other
+const MP_PROTOCOL = 5;          // bump whenever these messages change, so two different builds refuse to play each other
 const MP_DEFAULT_SERVER = 'wss://battle-fleet-relay.dwyer.dev';   // prefilled on the Multiplayer screen (a player can type another)
 const MP_SERVER_KEY = 'bf.mpServer';
 
@@ -6987,7 +7018,7 @@ function mpHostStartBt(){
 const MP_TIME_CHOICES = [2,3,4];   // minutes per phase the host can pick
 const MP_REVIEW_SECONDS = 30;      // after the Firing results: time to look before the phase moves on by itself
 function mpCleanSettings(d){
-  return { type: ['koth','breakthrough'].includes(d.type) ? d.type : 'annihilation',
+  return { type: ['koth','breakthrough','quick'].includes(d.type) ? d.type : 'annihilation',
     minutes: MP_TIME_CHOICES.includes(+d.minutes) ? +d.minutes : 3,
     zones: KOTH_ZONE_CHOICES.includes(+d.zones) ? +d.zones : 3,
     points: KOTH_POINT_CHOICES.includes(+d.points) ? +d.points : 10 };
@@ -6998,11 +7029,15 @@ function mpLobbySettings(){
 function mpSettingsText(st){
   const time = `${st.minutes} minutes per phase`;
   if(st.type==='koth') return `King of the Hill with ${st.zones} capture zone${st.zones===1?'':'s'} of ${st.points} points, ${time}`;
+  if(st.type==='quick') return `Quick Battle, ${time}`;
   return st.type==='breakthrough' ? `Breakthrough, ${time}` : `Annihilation, ${time}`;
 }
 function mpUseSettings(){
   state.skirmishType = mp.settings.type;
-  if(mp.settings.type==='annihilation') setBoardSize(1200,800); else setBoardSize(800,800);
+  if(mp.settings.type==='annihilation') setBoardSize(1200,800);
+  else if(mp.settings.type==='quick') setBoardSize(QUICK_BOARD, QUICK_BOARD);
+  else setBoardSize(800,800);
+  quickSyncFleetPicker();
   $mp('mpFleetNote').textContent = mp.settings.type==='koth'
     ? 'Multiplayer: your opponent gets the same ships. You each fit out your own fleet, then deploy it by hand.'
     : mp.settings.type==='breakthrough'
